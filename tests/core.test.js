@@ -352,7 +352,7 @@ test('saran AI: jumlah final dihitung deterministik, bukan angka halusinasi mode
  assert.match(seen,/HargaPembanding|hargaPembanding/i);
  assert(!seen.includes('bankAccount'));
  assert(result.lower<result.amount&&result.upper>result.amount);
- await assert.rejects(estimateAI({AI:{run:async()=>({response:'{"adjustment":50,"explanation":"bohong"}'})}},a,{assetId:'hp',condition:'good',comparables:[],sourceUrl:'',note:''},new Date()),/Layanan AI/);
+ await assert.rejects(estimateAI({AI:{run:async()=>({response:'{"adjustment":50,"explanation":"bohong"}'})}},a,{assetId:'hp',condition:'good',comparables:[],sourceUrl:'',note:''},new Date()),/kedua model/);
 });
 
 test('nilai pribadi dan AI terpisah, validasi snapshot dan aset lama tetap valid',async()=>{
@@ -398,4 +398,110 @@ test('endpoint estimasi AI wajib sesi, binding, Origin; tidak mengubah D1 tanpa 
  const changed={...next,assets:next.assets.map(a=>a.id==='phone1'?{...a,aiValuation:advice,valuationSource:'ai'}:a)};
  assert.equal((await req('/api/portfolio','PUT',{state:changed,revision:1},cookie)).status,200);
  assert.equal(db.prepare('SELECT revision FROM portfolio WHERE id=1').get().revision,2);
+});
+
+// V9: model lama telah dihentikan, pilih model yang didukung dan otomatis beralih.
+test('V9 tidak lagi memanggil model Llama lama yang deprecated',async()=>{
+ const {modelNames}=await import('../src/valuation-ai.js');
+ assert.deepEqual(modelNames,['@cf/zai-org/glm-4.7-flash','@cf/google/gemma-4-26b-a4b-it']);
+ assert(!modelNames.includes('@cf/meta/llama-3.1-8b-instruct'));
+});
+test('V9 memahami format respons API Cloudflare model baru',async()=>{
+ const {parseReply}=await import('../src/valuation-ai.js');
+ assert.equal(parseReply({choices:[{message:{content:'{"adjustment":1.05,"explanation":"Baik terawat"}'}}]}).adjustment,1.05);
+ assert.equal(parseReply({choices:[{message:{content:'```json\n{"adjustment":0.94,"explanation":"Penggunaan wajar"}\n```'}}]}).adjustment,0.94);
+ assert.equal(parseReply({response:'{"adjustment":1,"explanation":"Baik"}'}).adjustment,1);
+ assert.equal(parseReply({response:'{"adjustment":"1.02","explanation":"Baik"}'}).adjustment,1.02);
+ assert.throws(()=>parseReply({choices:[{message:{content:'{"adjustment":1000,"explanation":"Manipulasi"}'}}]}),/di luar batas/);
+});
+test('V9 otomatis beralih ke Gemma bila GLM gagal karena model/error parsing',async()=>{
+ const {estimateAI}=await import('../src/valuation-ai.js');
+ const used=[];
+ const env={AI:{run:async(model,options)=>{
+  used.push(model);
+  if(used.length===1)throw Object.assign(Error('AiError: 5028 model deprecated'),{status:410});
+  assert.equal(options.stream,false);
+  return {choices:[{message:{content:'{"adjustment":0.96,"explanation":"Usia perangkat dan kondisi baik."}'}}]};
+ }}};
+ const a={id:'a',kind:'phone',name:'HP',purchasePrice:5000000,acquiredAt:'2025-01-01',valuationMode:'auto',direction:'down',annualRate:20};
+ const advice=await estimateAI(env,a,{assetId:'a',condition:'good',note:'',sourceUrl:'',comparables:[]});
+ assert.equal(advice.model,'@cf/google/gemma-4-26b-a4b-it');
+ assert.equal(used.length,2);assert(advice.amount>0);
+});
+test('V9 bila quota Workers AI habis: jujur, tidak melakukan pemanggilan cadangan',async()=>{
+ const {estimateAI}=await import('../src/valuation-ai.js');
+ let runs=0;const env={AI:{run:async()=>{runs++;throw Object.assign(Error('You have used up your daily free allocation'),{status:429,code:3036})}}};
+ const a={id:'a',kind:'car',name:'Mobil',amount:80000000};
+ await assert.rejects(estimateAI(env,a,{assetId:'a',condition:'good',note:'',sourceUrl:'',comparables:[]}),/Kuota atau kapasitas Cloudflare Workers AI/);
+ assert.equal(runs,1);
+});
+test('V9 status AI terautentikasi dan status binding tidak memanggil model',async()=>{
+ const {req,env}=setup();
+ assert.equal((await req('/api/ai/status')).status,401);
+ const login=await req('/api/login','POST',{username:'owner',password});const cookie=login.headers.get('set-cookie');
+ const missing=await (await req('/api/ai/status','GET',undefined,cookie)).json();
+ assert.equal(missing.configured,false);assert.equal(missing.marketRealtime,false);
+ let aiCalls=0;env.AI={run:async()=>{aiCalls++;return {response:'{}'}}};
+ const working=await (await req('/api/ai/status','GET',undefined,cookie)).json();
+ assert.equal(working.configured,true);assert.match(working.model,/glm-4.7-flash/);assert.equal(aiCalls,0);
+});
+test('V9 meminta AI hanya untuk aset yang valid dan tidak mengubah saldo bank',async()=>{
+ const {req,env}=setup();
+ const login=await req('/api/login','POST',{username:'owner',password});const cookie=login.headers.get('set-cookie');
+ const a={id:'phone99',kind:'phone',name:'Ponsel',purchasePrice:4000000,acquiredAt:'2025-01-01',valuationMode:'auto',direction:'down',annualRate:20};
+ const bank={id:'bb',kind:'bank',name:'Rekening',bank:'BCA',accountType:'tabungan',last4:'',amount:20000000};
+ const next={...state,assets:[a,bank]};
+ await req('/api/portfolio','PUT',{state:next,revision:0},cookie);
+ let called=0;env.AI={run:async()=>{called++;return {choices:[{message:{content:'{"adjustment":1,"explanation":"Estimasi berdasarkan usia dan kondisi"}'}}]}}};
+ const input={assetId:'phone99',condition:'good',comparables:[],sourceUrl:'',note:''};
+ const aiResult=await req('/api/ai/estimate','POST',input,cookie);assert.equal(aiResult.status,200);
+ assert.equal(called,1);
+ const saved=await (await req('/api/portfolio','GET',undefined,cookie)).json();
+ assert.deepEqual(saved.state,next);
+});
+
+// V10: uji langsung model, tampilkan versi kode backend dan penyebab error aman.
+test('V10 status menunjukkan versi backend, tanpa melakukan panggilan AI',async()=>{
+ const {req,env}=setup();const login=await req('/api/login','POST',{username:'owner',password});const cookie=login.headers.get('set-cookie');
+ env.AI={run:async()=>{throw Error('Seharusnya tidak dipanggil')}};
+ const r=await req('/api/ai/status','GET',undefined,cookie);assert.equal(r.status,200);
+ const data=await r.json();assert.equal(data.version,'v10-2026-11-16');assert.equal(data.configured,true);assert.equal(data.tested,false);
+});
+test('V10 diagnose memeriksa JSON nyata dari GLM tanpa membocorkan aset',async()=>{
+ const {req,env}=setup();const login=await req('/api/login','POST',{username:'owner',password});const cookie=login.headers.get('set-cookie');
+ let calls=0;env.AI={run:async(model,options)=>{calls++;assert.equal(model,'@cf/zai-org/glm-4.7-flash');assert.equal(options.stream,false);assert(!JSON.stringify(options).includes('Rekening'));return {choices:[{message:{content:'```json\n{"adjustment":1,"explanation":"Koneksi AI berhasil."}\n```'}}]}}};
+ assert.equal((await req('/api/ai/diagnose','POST',{},undefined)).status,401);
+ assert.equal((await req('/api/ai/diagnose','POST',{},cookie,'https://attacker.test')).status,403);
+ const response=await req('/api/ai/diagnose','POST',{},cookie);assert.equal(response.status,200);
+ const data=await response.json();assert.equal(data.ok,true);assert.equal(data.version,'v10-2026-11-16');assert.equal(calls,1);
+});
+test('V10 diagnose beralih ke Gemma setelah GLM gagal',async()=>{
+ const {diagnoseAI}=await import('../src/valuation-ai.js');const used=[];
+ const env={AI:{run:async(model)=>{used.push(model);if(used.length===1)throw Object.assign(Error('model deprecated'),{status:410,code:5028});return {choices:[{message:{content:'{"explanation":"Siap uji.","adjustment":1.0}'}}]}}}};
+ const result=await diagnoseAI(env);assert.equal(result.ok,true);assert.equal(used.length,2);assert.equal(result.model,'@cf/google/gemma-4-26b-a4b-it');
+});
+test('V10 diagnose membedakan binding tidak ada dan kuota habis',async()=>{
+ const {req,env}=setup();const login=await req('/api/login','POST',{username:'owner',password});const cookie=login.headers.get('set-cookie');
+ const a=await req('/api/ai/diagnose','POST',{},cookie);assert.equal(a.status,503);const noAi=await a.json();assert.equal(noAi.code,'AI_BINDING_MISSING');assert.match(noAi.requestId,/^[a-f0-9]{8}$/);
+ let attempts=0;env.AI={run:async()=>{attempts++;throw Object.assign(Error('You have used up your daily free allocation'),{status:429,code:3036})}};
+ const b=await req('/api/ai/diagnose','POST',{},cookie);assert.equal(b.status,429);const noQuota=await b.json();assert.equal(noQuota.code,'AI_QUOTA');assert.equal(attempts,1);
+});
+test('V10 estimasi AI provider unavailable memberi 503 dengan kode, bukan 502 generik',async()=>{
+ const {req,env}=setup();const login=await req('/api/login','POST',{username:'owner',password});const cookie=login.headers.get('set-cookie');
+ const phone={id:'px',kind:'phone',name:'HP',purchasePrice:6000000,acquiredAt:'2025-01-01',valuationMode:'auto',direction:'down',annualRate:20};
+ await req('/api/portfolio','PUT',{state:{...state,assets:[...state.assets,phone]},revision:0},cookie);
+ let calls=0;env.AI={run:async()=>{calls++;throw Object.assign(Error('AI model not found'),{status:410,code:5028})}};
+ const r=await req('/api/ai/estimate','POST',{assetId:'px',condition:'good',comparables:[],sourceUrl:'',note:''},cookie);
+ assert.equal(r.status,503);const body=await r.json();assert.equal(body.code,'AI_MODEL_UNAVAILABLE');assert.equal(calls,2);assert.match(body.requestId,/^[a-f0-9]{8}$/);
+});
+test('V10 parsing respons bertingkat dan alasan berisi kurung kurawal',async()=>{
+ const {parseReply}=await import('../src/valuation-ai.js');
+ const reply={choices:[{message:{content:'Ini jawabannya: {"explanation":"Aset {baik} terawat, estimasi wajar.","adjustment":0.98} ✅'}}]};
+ assert.equal(parseReply(reply).adjustment,0.98);
+});
+
+test('V10 429 khusus per-model tetap mencoba model cadangan',async()=>{
+ const {diagnoseAI}=await import('../src/valuation-ai.js');let calls=0;
+ const result=await diagnoseAI({AI:{run:async()=>{calls++;if(calls===1)throw Object.assign(Error('Per-model rate limit'),{status:429});return {response:'{"adjustment":1,"explanation":"Cadangan berfungsi."}'}}}});
+ assert.equal(calls,2);assert.equal(result.ok,true);assert.match(result.model,/gemma/);
 });

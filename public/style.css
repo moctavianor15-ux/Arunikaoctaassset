@@ -72,3 +72,10 @@
 .aiConnection span.aiProblem{color:#a13b29}
 .aiConnection button{min-height:34px;padding:6px 12px}
 @media(max-width:600px){.aiConnection{align-items:flex-start;flex-direction:column;gap:8px}}
+
+/* V11 - identitas barang terdeteksi dan sumber penawaran; ringan pada HP. */
+.aiDetected{padding:10px 12px;border:1px solid #bfd7ca;background:#eef6ef;border-radius:9px;color:#2b5948;font-size:12px;margin:8px 0 13px;overflow-wrap:anywhere}
+.aiConsent{display:flex!important;align-items:flex-start;gap:10px;font-size:12px;font-weight:550!important;color:#6b5540;margin:8px 0 14px}
+.aiConsent input{width:17px;min-width:17px;height:17px;margin-top:3px}
+.aiMarketLinks{margin-top:9px;padding-top:9px;border-top:1px solid #d7e8d9;display:grid;gap:5px}
+.aiMarketLinks a{display:block;overflow-wrap:anywhere}

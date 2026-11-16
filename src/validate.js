@@ -1,3 +1,4 @@
+import {assetSignature} from './valuation-ai.js';
 const keys=['house','car','bike','gold','crypto','business','bank','phone','electronics','emergency','spending'];
 const coins = ['BTC','ETH','SOL','XRP','BNB','ADA','DOGE','USDT','USDC'];
 const businessFields = {
@@ -31,11 +32,25 @@ function validDay(v){
  return Number.isFinite(t)&&new Date(t).toISOString().slice(0,10)===v&&t>=Date.UTC(1900,0,1)&&t<=Date.now()+86400000;
 }
 function validAutomaticFields(a){return validDay(a.acquiredAt)&&valuationDirections.includes(a.direction)&&number(a.annualRate,100)}
-function validVehicleValuation(a){return a.valuationMode===undefined||a.valuationMode==='manual'||(a.valuationMode==='auto'&&validAutomaticFields(a))}
-function validHouseValuation(a){return a.valuationMode===undefined||a.valuationMode==='manual'||(a.valuationMode==='auto'&&validDay(a.acquiredAt)&&number(a.landRate,100)&&number(a.buildingRate,100))}
+function validVehicleValuation(a){return (a.valuationMode===undefined||a.valuationMode==='manual'||(a.valuationMode==='auto'&&validAutomaticFields(a)))&&validUserAI(a)}
+function validHouseValuation(a){return (a.valuationMode===undefined||a.valuationMode==='manual'||(a.valuationMode==='auto'&&validDay(a.acquiredAt)&&number(a.landRate,100)&&number(a.buildingRate,100)))&&validUserAI(a)}
 function validElectronics(a){
  return (a.kind!=='electronics'||electronicTypes.includes(a.deviceType))&&number(a.purchasePrice)&&validDay(a.acquiredAt)&&
-  (a.valuationMode==='manual'?number(a.amount):a.valuationMode==='auto'&&valuationDirections.includes(a.direction)&&number(a.annualRate,100));
+  (a.valuationMode==='manual'?number(a.amount):a.valuationMode==='auto'&&valuationDirections.includes(a.direction)&&number(a.annualRate,100))&&validUserAI(a);
+}
+function validUserAI(a){
+ if(a.ownerValue!==undefined&&!number(a.ownerValue))return false;
+ if(a.valuationSource!==undefined&&!['projection','user','ai'].includes(a.valuationSource))return false;
+ if(a.valuationSource==='user'&&!number(a.ownerValue))return false;
+ if(a.aiValuation===undefined)return a.valuationSource!=='ai';
+ const v=a.aiValuation;
+ return v&&number(v.amount)&&number(v.lower)&&number(v.upper)&&v.lower<=v.amount&&v.amount<=v.upper&&number(v.baseline)&&
+  typeof v.asOf==='string'&&Number.isFinite(Date.parse(v.asOf))&&v.asOf.length<=40&&
+  typeof v.model==='string'&&v.model.length<=120&&['rendah','sedang'].includes(v.confidence)&&
+  ['input-pengguna','model-tanpa-data-pasar'].includes(v.sourceType)&&typeof v.reason==='string'&&v.reason.length<=400&&
+  Number.isInteger(v.comparablesUsed)&&v.comparablesUsed>=0&&v.comparablesUsed<=3&&Array.isArray(v.comparablePrices)&&v.comparablePrices.length===v.comparablesUsed&&v.comparablePrices.every(x=>Number.isSafeInteger(x)&&x>0&&x<=1e15)&&
+  typeof v.sourceUrl==='string'&&v.sourceUrl.length<=300&&(!v.sourceUrl||(/^https:\/\/[^\s]+$/i.test(v.sourceUrl)&&!v.sourceUrl.includes('@')))&&
+  ['new','good','fair','poor'].includes(v.condition)&&typeof v.signature==='string'&&v.signature.length<=600&&v.signature===assetSignature(a);
 }
 function validCrypto(a){
  if(!['balance','auto','manual'].includes(a.mode)||typeof a.wallet!=='string'||a.wallet.length>80||!number(a.fxManual,1e7)||!number(a.cost,1e12))return false;

@@ -1,5 +1,6 @@
 import {digest,token,verifyPassword,credentialVersion} from './auth.js';
 import {valid} from './validate.js';
+import {assessInput,estimateAI,valuedKinds} from './valuation-ai.js';
 const json=(data,status=200,headers={})=>new Response(JSON.stringify(data),{status,headers:{'Content-Type':'application/json; charset=utf-8',...headers}});
 const fail=(message,status)=>{throw Object.assign(Error(message),{status})};
 const cookie=t=>`__Host-arunika=${t}; Path=/; HttpOnly; Secure; SameSite=Strict${t?'':'; Max-Age=0'}`;
@@ -29,7 +30,7 @@ async function session(req,env,now){
 async function route(req,env){
  const u=new URL(req.url),p=u.pathname,now=Math.floor(Date.now()/1000);
  if(u.protocol!=='https:'&&!['localhost','127.0.0.1'].includes(u.hostname))return Response.redirect('https://'+u.host+u.pathname+u.search,308);
- const publicPaths=new Set(['/','/index.html','/login','/login.html','/login.js','/style.css','/landscape.svg','/loading.js','/loading.css','/app.js','/portfolio.js','/cashflow.js']);
+ const publicPaths=new Set(['/','/index.html','/login','/login.html','/login.js','/style.css','/landscape.svg','/loading.js','/loading.css','/app.js','/portfolio.js','/cashflow.js','/ai-valuation.js']);
  if(publicPaths.has(p)&&['GET','HEAD'].includes(req.method)){
   return env.ASSETS.fetch(req);
  }
@@ -54,6 +55,19 @@ async function route(req,env){
  if(p==='/api/session'&&req.method==='GET')return json({username:env.AUTH_USERNAME});
  if(p==='/api/logout'&&req.method==='POST'){
   await env.DB.prepare('DELETE FROM sessions WHERE token_hash=?').bind(s.token_hash).run();return json({ok:true},200,{'Set-Cookie':cookie('')});
+ }
+ if(p==='/api/ai/estimate'&&req.method==='POST'){
+  // Autentikasi, Origin dan rate-limit telah diterapkan sebelum panggilan AI.
+  await limit(env,'ai-global',50,now);
+  await limit(env,'ai-ip:'+digest(req.headers.get('CF-Connecting-IP')||'local'),20,now);
+  const input=assessInput(await body(req,4096));
+  if(!input)fail('Data perbandingan AI tidak valid.',400);
+  const record=await env.DB.prepare('SELECT data FROM portfolio WHERE id=1').first();
+  if(!record)fail('Data portofolio belum tersedia.',503);
+  const asset=JSON.parse(record.data).assets?.find(a=>a.id===input.assetId);
+  if(!asset||!valuedKinds.includes(asset.kind))fail('Aset yang dapat dinilai AI tidak ditemukan.',404);
+  const advice=await estimateAI(env,asset,input);
+  return json({advice});
  }
  if(p==='/api/portfolio'&&req.method==='GET'){
   const r=await env.DB.prepare('SELECT * FROM portfolio WHERE id=1').first();if(!r)fail('Database belum diinisialisasi. Jalankan migrations/0001.sql di D1 Console.',503);return json({state:JSON.parse(r.data),revision:r.revision,updatedAt:r.updated_at});

@@ -256,15 +256,72 @@ test('API D1 menyimpan/membaca buku kas dan memblokir overdraft atau saldo trans
  const gotAfter=await (await req('/api/portfolio','GET',undefined,cookie)).json();assert.deepEqual(gotAfter.state,full);
 });
 test('transaksi tidak menampilkan HTML asing dari catatan dan nama rekening',()=>{
- const nodes={cashBalances:{innerHTML:''},cashList:{innerHTML:''},cashBankFilter:{innerHTML:'',value:''},cashPeriod:{value:'all'},cashReference:{value:'2026-11-16'},cashStart:{value:'2026-11-01'},cashEnd:{value:'2026-11-30'},cashTypeFilter:{value:''},cashReferenceWrap:{hidden:false},cashStartWrap:{hidden:false},cashEndWrap:{hidden:false},cashPeriodLabel:{innerHTML:''},cashCount:{textContent:''},cashCsv:{disabled:false},cashIncome:{textContent:''},cashExpense:{textContent:''},cashNet:{textContent:'',className:''},cashTransfer:{textContent:''},cashMore:{hidden:true}};
+ const nodes={cashBalances:{innerHTML:''},cashList:{innerHTML:''},cashBankFilter:{innerHTML:'',value:''},cashPeriod:{value:'all'},cashReference:{value:'2026-11-16'},cashStart:{value:'2026-11-01'},cashEnd:{value:'2026-11-30'},cashTypeFilter:{value:''},cashReferenceWrap:{hidden:false},cashStartWrap:{hidden:false},cashEndWrap:{hidden:false},cashPeriodLabel:{innerHTML:''},cashCount:{textContent:''},cashCsv:{disabled:false},cashIncome:{textContent:''},cashExpense:{textContent:''},cashNet:{textContent:'',className:''},cashTransfer:{textContent:''},cashMore:{hidden:true},cashArchiveMonth:{value:'2026-11',max:''},cashPrevMonth:{disabled:false},cashNextMonth:{disabled:false},cashThisMonth:{disabled:false},cashArchiveCount:{textContent:''},cashArchiveCsv:{disabled:false},cashArchiveStats:{innerHTML:''},cashCalendar:{innerHTML:''},cashDayTitle:{innerHTML:''},cashDaySummary:{innerHTML:''}};
  const ctx=vm.createContext({Intl,localStorage:{getItem:()=>null},document:{getElementById:id=>nodes[id]||{}},Date});
  const portfolio=readFileSync(new URL('../public/portfolio.js',import.meta.url),'utf8');
  const cash=readFileSync(new URL('../public/cashflow.js',import.meta.url),'utf8');
  const app=readFileSync(new URL('../public/app.js',import.meta.url),'utf8');
  vm.runInContext(portfolio+'\n'+cash+'\n'+app.slice(0,app.indexOf("$('form').onsubmit")),ctx);
  ctx.sample={...testCashState,assets:[{...bankOne,name:'<img src=x>'},bankTwo],transactions:[{...incomeTx,note:'<svg onload=alert(1)>'}]};
- vm.runInContext('state=sample;renderCashflow()',ctx);
+ vm.runInContext('state=sample;cashArchiveDay="2026-11-15";renderCashflow()',ctx);
  assert.match(nodes.cashBalances.innerHTML,/&lt;img/);
  assert.match(nodes.cashList.innerHTML,/&lt;svg/);
  assert(!nodes.cashList.innerHTML.includes('<svg onload'));
+});
+
+// v7: arsip bulanan berkalender, terpisah dari filter periode dan saldo bank.
+test('arsip transaksi mengelompokkan per bulan dan hari, tidak menjumlah antarbulan',()=>{
+ const ctx=cashContext();
+ const tx=[incomeTx,expenseTx,transferTx,
+  {id:'oct',type:'expense',accountId:'bank-1',date:'2026-10-31',amount:9000,category:'makan',note:'Makan Oktober'},
+  {id:'dec',type:'income',accountId:'bank-2',date:'2026-12-01',amount:1000,category:'gaji',note:'Gaji Desember'}];
+ ctx.txs=tx;
+ const r=vm.runInContext('cashArchiveForMonth("2026-11",txs,"","")',ctx);
+ assert.deepEqual([...r].map(x=>x.id),['tx-3','tx-2','tx-1']);
+ assert.equal(vm.runInContext('cashTotals(cashArchiveForMonth("2026-11",txs,"","" )).income',ctx),250000);
+ assert.equal(vm.runInContext('cashTotals(cashArchiveForMonth("2026-11",txs,"","" )).expense',ctx),70000);
+ assert.equal(vm.runInContext('cashTotals(cashArchiveForMonth("2026-11",txs,"","" )).transfer',ctx),100000);
+ assert.equal(vm.runInContext('cashArchiveForMonth("2026-11",txs,"income","").length',ctx),1);
+ assert.equal(vm.runInContext('cashArchiveForMonth("2026-11",txs,"","bank-2").length',ctx),1,'Transfer ke rekening ikut filter bank tujuan');
+ assert.equal(vm.runInContext('cashArchiveForMonth("2026-10",txs,"","").length',ctx),1);
+ assert.equal(vm.runInContext('cashArchiveForMonth("2026-12",txs,"","").length',ctx),1);
+});
+test('navigasi kalender bulanan menangani pergantian tahun dan bulan Februari',()=>{
+ const ctx=cashContext(),evalJs=x=>vm.runInContext(x,ctx);
+ assert.equal(evalJs('cashMonthShift("2026-01",-1)'), '2025-12');
+ assert.equal(evalJs('cashMonthShift("2026-12",1)'), '2027-01');
+ assert.equal(evalJs('cashMonthShift("2028-03",-1)'), '2028-02');
+ assert.equal(evalJs('new Date(2028,2,0).getDate()'),29);
+ assert.equal(evalJs('cashFullDay("2026-11-16").toLowerCase().includes("november")'),true);
+});
+test('arsip kalender menampilkan satu tanggal, batasi 15 baris dan saldo utuh',()=>{
+ const nodes={cashArchiveMonth:{value:'2026-11'},cashTypeFilter:{value:''},cashBankFilter:{value:''},cashPrevMonth:{disabled:false},cashNextMonth:{disabled:false},cashThisMonth:{disabled:false},cashArchiveCount:{textContent:''},cashArchiveCsv:{disabled:false},cashArchiveStats:{innerHTML:''},cashCalendar:{innerHTML:''},cashDayTitle:{innerHTML:''},cashDaySummary:{innerHTML:''},cashList:{innerHTML:''},cashMore:{hidden:true}};
+ const ctx=vm.createContext({Intl,Date,localStorage:{getItem:()=>null},document:{getElementById:id=>nodes[id]||{}},setTimeout});
+ const portfolio=readFileSync(new URL('../public/portfolio.js',import.meta.url),'utf8');
+ const cash=readFileSync(new URL('../public/cashflow.js',import.meta.url),'utf8');
+ const app=readFileSync(new URL('../public/app.js',import.meta.url),'utf8');
+ vm.runInContext(portfolio+'\n'+cash+'\n'+app.slice(0,app.indexOf("$('form').onsubmit")),ctx);
+ const entries=Array.from({length:35},(_,i)=>({...incomeTx,id:'series-'+i,date:'2026-11-08',amount:1000,note:'Hari sibuk '+i}));
+ ctx.sample={...testCashState,transactions:[...entries,expenseTx,{...incomeTx,id:'other-day',date:'2026-11-04'}]};
+ vm.runInContext('state=sample;cashArchiveDay="2026-11-08";renderCashArchive()',ctx);
+ assert.equal(nodes.cashList.innerHTML.match(/class="cashRow"/g)?.length,15);
+ assert.equal(nodes.cashMore.hidden,false);
+ assert.match(nodes.cashCalendar.innerHTML,/8 catatan|35 catatan/);
+ assert.match(nodes.cashArchiveCount.textContent,/37 transaksi/);
+ assert(nodes.cashCalendar.innerHTML.includes('aria-pressed="true"'));
+ assert.equal(vm.runInContext('cashTotals(cashArchiveForMonth("2026-11")).count',ctx),37);
+ vm.runInContext('cashDayVisible=45;renderCashArchive()',ctx);
+ assert.equal(nodes.cashList.innerHTML.match(/class="cashRow"/g)?.length,35);
+ assert.equal(nodes.cashMore.hidden,true);
+ vm.runInContext('cashArchiveDay="2026-11-16";renderCashArchive()',ctx);
+ assert.equal(nodes.cashList.innerHTML.match(/class="cashRow"/g)?.length,1,'hari lain punya transaksi yang berbeda');
+ assert.match(nodes.cashList.innerHTML,/Sarapan/);
+ assert.equal(vm.runInContext('bankBalance(state.assets[0])',ctx),1035000-70000+250000,'saldo dihitung atas keseluruhan histori, bukan hari terbuka');
+});
+test('pembaruan arsip tidak memerlukan migrasi D1, pemulihan backup membawa kembali transaksi',()=>{
+ const html=readFileSync(new URL('../public/index.html',import.meta.url),'utf8');
+ const js=readFileSync(new URL('../public/app.js',import.meta.url),'utf8');
+ assert.match(html,/id="cashCalendar"/);assert.match(html,/id="cashArchiveMonth"/);
+ assert.match(js,/transactions:transactionsOf\(d\)/);
+ assert.doesNotMatch(js,/commit\(\{version,assets,debt,monthly,months\}\)/);
 });

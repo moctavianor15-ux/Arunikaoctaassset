@@ -82,6 +82,7 @@ async function boot(){
  }catch(e){ArunoLoad.fail(e.name==='TimeoutError'?'Koneksi server melewati batas waktu. Coba lagi setelah koneksi stabil.':e.message)}
 }
 function value(a){
+ if(aiSelectedValue(a)!==null)return aiSelectedValue(a);
  if(a.kind==='bank')return bankBalance(a);
  if(a.kind==='house')return valuationInfo(a)?.current??a.land+a.building;
  if(a.kind==='phone'||a.kind==='electronics')return valuationInfo(a).current;
@@ -103,6 +104,7 @@ function summary(){
  return {sums,missing,deficit,total,net:total-state.debt-deficit};
 }
 function assetNotes(a){
+ if(aiSelectedValue(a)!==null)return '<span class="netNote">'+esc(aiValueLabel(a))+'</span>';
  if(a.kind==='phone'||a.kind==='electronics'||a.valuationMode==='auto'){const info=valuationInfo(a);if(info)return '<span class="netNote">'+(a.kind==='electronics'?esc(deviceTypes[a.deviceType]||'Elektronik')+' · ':'')+(info.auto?'Estimasi otomatis':'Harga manual')+' · Nilai dasar '+money(info.basis)+' · '+esc(info.date)+'</span>'+valuationDelta(info)}
  if(a.kind==='house')return '<span class="netNote">Tanah '+money(a.land)+' · Bangunan '+money(a.building)+'</span>';
  if(a.kind==='gold')return '<span class="netNote">'+a.grams.toLocaleString('id-ID')+' gram · '+a.karat+' karat · '+(a.mode==='manual'?'Buyback manual':'Harga spot')+'</span>';
@@ -133,12 +135,12 @@ function renderValuationSummary(){
  const decreased=entries.reduce((s,row)=>s+Math.max(0,-row.info.delta),0);
  $('valuationSummary').innerHTML='<div class="valuationTotals"><div><span>Kenaikan estimasi</span><strong class="positive">'+money(increased)+'</strong></div><div><span>Penyusutan estimasi</span><strong class="negative">− '+money(decreased)+'</strong></div><div><span>Selisih bersih</span><strong>'+money(increased-decreased)+'</strong></div></div>'+
  (entries.length?'<div class="valuationRows">'+entries.map(({asset,info})=>'<div><span><b>'+esc(asset.name)+'</b><small>'+(info.auto?'Proyeksi per tanggal '+esc(localDay()):'Dibanding nilai beli')+'</small></span>'+valuationDelta(info)+'</div>').join('')+'</div>':'<p class="hint">Tambahkan HP atau barang elektronik untuk melihat perubahan nilainya. Rumah, mobil, dan motor dapat menggunakan mode otomatis secara opsional.</p>')+
- '<p class="hint">Perubahan nilai adalah perkiraan di atas kertas, bukan keuntungan terealisasi. Angka tidak ditambahkan lagi ke kekayaan bersih karena sudah termasuk dalam nilai aset saat ini.</p>';
+ '<p class="hint">Bagian ini memperlihatkan proyeksi dasar, bukan keuntungan terealisasi. Jika Anda memilih nilai pribadi atau AI, kekayaan bersih menggunakan nilai yang dipilih dan proyeksi ini tidak ditambahkan lagi.</p>';
 }
 function render(){
  const {sums,missing,deficit,total,net}=summary();
  $('total').textContent=money(total)+(missing?' *':'');$('net').textContent=money(net)+(missing?' *':'');$('owed').textContent=money(state.debt);
- renderNetBreakdown({sums,missing,deficit,total,net});renderValuationSummary();
+ renderNetBreakdown({sums,missing,deficit,total,net});renderValuationSummary();renderAIValuations();
  $('debtDetail').textContent=deficit?'Koreksi terpisah: defisit ekuitas usaha '+money(deficit):'';
  $('count').textContent=state.assets.length+' aset';
  $('composition').innerHTML='<div class="allocation">'+keys.map(k=>'<span style="width:'+(total?sums[k]/total*100:0)+'%;background:'+categories[k][2]+'"></span>').join('')+'</div><div class="legend">'+keys.map(k=>'<div><i class="dot" style="background:'+categories[k][2]+'"></i>'+categories[k][0]+'<b>'+(total?(100*sums[k]/total).toLocaleString('id-ID',{maximumFractionDigits:1}):0)+'%</b></div>').join('')+'</div>'+(missing?'<p class="hint warn">* '+missing+' catatan menunggu harga atau kurs dan belum masuk total.</p>':'')+(loadError?'<p class="warn">Data lokal tidak dapat dibaca. Penyimpanan perubahan diblokir untuk melindungi data asli.</p>':'');
@@ -186,8 +188,9 @@ const opts=(items,val)=>items.map(([k,n])=>'<option value="'+k+'" '+(k===val?'se
 function assetForm(k='house',a=null){
  const options=opts(keys.map(id=>[id,categories[id][0]]),k);
  modal(a?'Ubah aset':'Tambah aset',label('Kategori','<select id="kind" '+(a?'disabled':'')+'>'+options+'</select>')+label('Nama aset','<input name="name" maxlength="90" placeholder="Misalnya rumah tinggal" value="'+esc(a?.name||'')+'" required>')+'<div id="specific"></div>'+(a?'<button type="button" id="del" class="soft warn">Hapus aset</button>':''),async data=>{
-  const kind=$('kind').value, item={kind,id:a?.id||crypto.randomUUID(),name:data.get('name').trim()};
+  const kind=$('kind').value, item={...(a||{}),kind,id:a?.id||crypto.randomUUID(),name:data.get('name').trim()};
   for(const [field,v] of data)if(field!=='name')item[field]=['mode','wallet','symbol','bank','accountType','last4','valuationMode','direction','acquiredAt','deviceType'].includes(field)?v.trim():Number(v);
+  if(a&&aiAssetSignature(a)!==aiAssetSignature(item)){delete item.aiValuation;if(item.valuationSource==='ai')item.valuationSource='projection'}
   await commit({...state,assets:a?state.assets.map(old=>old.id===a.id?item:old):[...state.assets,item]});
   if(kind==='crypto'&&item.mode==='auto')void updateCoin(item.symbol);
  });
@@ -214,7 +217,7 @@ $('form').onsubmit=async e=>{e.preventDefault();try{if(handler){await handler(ne
 $('close').onclick=()=>{if(!saving)$('dlg').close()};$('dlg').addEventListener('cancel',e=>{if(saving)e.preventDefault()});
 $('filter').innerHTML='<option value="">Semua kategori</option>'+opts(keys.map(k=>[k,categories[k][0]]));
 $('filter').onchange=render;$('add').onclick=()=>assetForm();
-setupCashflow();
+setupCashflow();setupAIValuations();
 $('bankGo').onclick=()=>{$('filter').value='bank';render();$('portofolio').scrollIntoView({behavior:'smooth',block:'start'})};
 $('toggleNet').onclick=()=>{const open=$('netBreakdown').hidden;$('netBreakdown').hidden=!open;$('toggleNet').setAttribute('aria-expanded',String(open));$('toggleNet').textContent=open?'Tutup rincian kekayaan bersih':'Lihat rincian kekayaan bersih';if(open)$('netBreakdown').scrollIntoView({behavior:'smooth',block:'nearest'})};
 $('portfolio').onclick=e=>{const b=e.target.closest('button');if(!b)return;if(b.dataset.new)assetForm(b.dataset.new);else{const a=state.assets.find(v=>v.id===b.dataset.id);if(a)assetForm(a.kind,a)}};

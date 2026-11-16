@@ -86,7 +86,9 @@ function valuationDelta(info){
 function currentValueHint(a){
  const info=valuationInfo(a);if(!info)return '';
  const model=info.auto?'Proyeksi otomatis':'Harga saat ini (manual)';
- return '<div class="detail"><span class="valuationCaption">'+model+' · acuan '+esc(info.date)+'</span><br>Nilai dasar '+money(info.basis)+' · Saat ini '+money(info.current)+'<br>'+valuationDelta(info)+(info.land!==undefined?'<br>Proyeksi tanah '+money(info.land)+' · bangunan '+money(info.building):'')+'</div>';
+ const chosen=aiSelectedValue(a);
+ const chosenText=chosen===null?'':'<br><b>Dipakai untuk kekayaan bersih: '+esc(aiValueLabel(a))+' · '+money(chosen)+'</b>';
+ return '<div class="detail"><span class="valuationCaption">'+model+' · acuan '+esc(info.date)+'</span><br>Nilai dasar '+money(info.basis)+' · Saat ini '+money(info.current)+'<br>'+valuationDelta(info)+chosenText+(info.land!==undefined?'<br>Proyeksi tanah '+money(info.land)+' · bangunan '+money(info.building):'')+'</div>';
 }
 function dateInput(a){return label('Tanggal pembelian / tanggal dasar penilaian','<input name="acquiredAt" type="date" min="1900-01-01" max="'+localDay()+'" value="'+esc(a?.acquiredAt||localDay())+'" required>')}
 function valuationSelect(mode){return label('Perhitungan nilai','<select name="valuationMode" id="valuationMode">'+opts([['auto','Otomatis mengikuti waktu'],['manual','Isi nilai saat ini secara manual']],mode)+'</select>')}

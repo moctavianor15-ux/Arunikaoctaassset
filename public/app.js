@@ -6,7 +6,8 @@ const categories = {
  bike:['Motor','Kendaraan roda dua','#9078a8','M8 17a3 3 0 1 1-6 0 3 3 0 0 1 6 0Zm14 0a3 3 0 1 1-6 0 3 3 0 0 1 6 0Zm-17 0 4-6h5l-3 6H5m14 0-4-10h-3M8 9h3'],
  phone:['HP & smartphone','Ponsel, telepon pintar','#567a99','M7 2h10a2 2 0 0 1 2 2v16a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2Zm4 17h2M8 5h8'],
  electronics:['Elektronik lainnya','Laptop, TV, tablet, kamera & lainnya','#8d6b97','M3 4h18v12H3V4Zm6 16h6m-3-4v4M6 8h5'],
- gold:['Emas','Logam mulia & perhiasan','#b68c39','m3 18 2-6h6l2 6H3Zm11 0-1-6h6l2 6h-7ZM8 10l2-6h5l2 6H8Z'],
+ gold:['Portofolio emas','Batangan, perhiasan & emas digital','#b68c39','m3 18 2-6h6l2 6H3Zm11 0-1-6h6l2 6h-7ZM8 10l2-6h5l2 6H8Z'],
+ stock:['Portofolio saham','Saham BEI & pasar luar negeri','#3e7b83','M3 3v18h18M7 16l5-5 3 2 5-7M17 6h3v3'],
  crypto:['Kripto','Saldo USD & koin digital','#7055a4','m12 2 8 5v10l-8 5-8-5V7l8-5Zm0 4-4 6 4 3 4-3-4-6Zm-4 9 4 4 4-4'],
  business:['Aset usaha','Ekuitas sesuai kepemilikan','#397189','M3 10l2-6h14l2 6m-18 0h18m-17 1v9h16v-9m-13 9v-6h5v6'],
  bank:['Tabungan bank','Saldo rekening tabungan, giro & deposito','#327a74','M3 9l9-6 9 6v2H3V9Zm2 4v6m5-6v6m4-6v6m5-6v6M3 21h18'],
@@ -28,7 +29,9 @@ function valid(s){
   if(!a||!keys.includes(a.kind)||typeof a.id!=='string'||!/^[-\w]{1,80}$/.test(a.id)||ids.has(a.id)||typeof a.name!=='string'||!a.name.trim()||a.name.length>90)return false;
   ids.add(a.id);
   if(a.kind==='house')return number(a.land)&&number(a.building)&&validHouseValuation(a);
-  if(a.kind==='gold')return number(a.grams,1e7)&&a.grams>0&&number(a.karat,24)&&a.karat>0&&['spot','manual'].includes(a.mode)&&(a.mode==='spot'||(number(a.rate,1e10)&&a.rate>0));
+  if(a.kind==='gold')return number(a.grams,1e7)&&a.grams>0&&number(a.karat,24)&&a.karat>0&&['spot','manual'].includes(a.mode)&&(a.mode==='spot'||(number(a.rate,1e10)&&a.rate>0))&&
+   (a.costTotal===undefined||number(a.costTotal))&&(a.goldType===undefined||['batangan','perhiasan','digital','lainnya'].includes(a.goldType));
+  if(a.kind==='stock')return validStock(a);
   if(a.kind==='crypto')return validCrypto(a);
   if(a.kind==='bank')return number(a.amount)&&typeof a.bank==='string'&&a.bank.trim().length>0&&a.bank.length<=60&&['tabungan','giro','deposito','lainnya'].includes(a.accountType)&&typeof a.last4==='string'&&(!a.last4||/^[0-9]{4}$/.test(a.last4));
   if(a.kind==='phone'||a.kind==='electronics')return validElectronics(a);
@@ -49,6 +52,13 @@ function validDay(v){
 function validAutomaticFields(a){return validDay(a.acquiredAt)&&valuationDirections.includes(a.direction)&&number(a.annualRate,100)}
 function validVehicleValuation(a){return a.valuationMode===undefined||a.valuationMode==='manual'||(a.valuationMode==='auto'&&validAutomaticFields(a))}
 function validHouseValuation(a){return a.valuationMode===undefined||a.valuationMode==='manual'||(a.valuationMode==='auto'&&validDay(a.acquiredAt)&&number(a.landRate,100)&&number(a.buildingRate,100))}
+function validStock(a){
+ return typeof a.ticker==='string'&&/^[A-Z0-9.-]{1,14}$/.test(a.ticker)&&
+  ['IDX','NYSE','NASDAQ','OTHER'].includes(a.exchange)&&['IDR','USD'].includes(a.currency)&&
+  number(a.shares,1e12)&&a.shares>0&&number(a.price,1e12)&&a.price>0&&
+  number(a.buyPrice,1e12)&&number(a.fxManual,1e7)&&
+  typeof a.broker==='string'&&a.broker.length<=80&&validDay(a.priceDate);
+}
 function validElectronics(a){
  return (a.kind!=='electronics'||electronicTypes.includes(a.deviceType))&&number(a.purchasePrice)&&validDay(a.acquiredAt)&&
   (a.valuationMode==='manual'?number(a.amount):a.valuationMode==='auto'&&valuationDirections.includes(a.direction)&&number(a.annualRate,100));
@@ -88,6 +98,7 @@ function value(a){
  if(a.kind==='phone'||a.kind==='electronics')return valuationInfo(a).current;
  if((a.kind==='car'||a.kind==='bike')&&a.valuationMode==='auto')return valuationInfo(a).current;
  if(a.kind==='gold')return a.mode==='manual'?a.grams*a.rate:quote?a.grams*a.karat/24*quote.rate:null;
+ if(a.kind==='stock')return stockValue(a);
  if(a.kind==='business')return equity(a);
  if(a.kind==='crypto'){const fx=a.fxManual||market.fx?.rate, amount=dollars(a);return fx&&amount!==null?amount*fx:null}
  return a.amount;
@@ -107,7 +118,8 @@ function assetNotes(a){
  if(aiSelectedValue(a)!==null)return '<span class="netNote">'+esc(aiValueLabel(a))+'</span>';
  if(a.kind==='phone'||a.kind==='electronics'||a.valuationMode==='auto'){const info=valuationInfo(a);if(info)return '<span class="netNote">'+(a.kind==='electronics'?esc(deviceTypes[a.deviceType]||'Elektronik')+' · ':'')+(info.auto?'Estimasi otomatis':'Harga manual')+' · Nilai dasar '+money(info.basis)+' · '+esc(info.date)+'</span>'+valuationDelta(info)}
  if(a.kind==='house')return '<span class="netNote">Tanah '+money(a.land)+' · Bangunan '+money(a.building)+'</span>';
- if(a.kind==='gold')return '<span class="netNote">'+a.grams.toLocaleString('id-ID')+' gram · '+a.karat+' karat · '+(a.mode==='manual'?'Buyback manual':'Harga spot')+'</span>';
+ if(a.kind==='gold')return '<span class="netNote">'+esc(goldKinds[a.goldType]||'Emas')+' · '+a.grams.toLocaleString('id-ID')+' gram · '+a.karat+' karat · '+(a.mode==='manual'?'Buyback manual':'Spot otomatis')+'</span>';
+ if(a.kind==='stock')return '<span class="netNote">'+esc(a.ticker)+' · '+esc(a.exchange)+' · '+a.shares.toLocaleString('id-ID',{maximumFractionDigits:6})+' lembar · Harga '+esc(a.currency)+' '+a.price.toLocaleString('id-ID')+' · '+esc(a.priceDate)+'</span>';
  if(a.kind==='bank')return '<span class="netNote">'+esc(a.bank)+' · '+esc(bankTypeName(a.accountType))+(a.last4?' · Rekening ••••'+esc(a.last4):'')+' · Saldo dasar '+money(a.amount)+(transactionsOf(state).some(t=>t.accountId===a.id||t.toAccountId===a.id)?' + mutasi buku kas':'')+'</span>';
  if(a.kind==='business')return '<span class="netNote">Porsi kepemilikan '+a.share+'% · Utang usaha sudah diperhitungkan</span>';
  if(a.kind==='crypto')return '<span class="netNote">'+(a.wallet?esc(a.wallet)+' · ':'')+(a.mode==='balance'?'Saldo USD':'Aset kripto dalam USD')+'</span>';
@@ -151,6 +163,10 @@ function render(){
  const holdings=state.assets.filter(a=>a.kind==='crypto'), known=holdings.map(dollars).filter(v=>v!==null);
  $('cryptoTotal').textContent=usd(known.reduce((sum,n)=>sum+n,0))+(known.length<holdings.length?' *':'');
  $('fxStatus').textContent=(market.fx?'1 USD = '+money(market.fx.rate)+' · Frankfurter '+market.fx.date+(fxFailed?' (kurs tersimpan)':''):'Kurs USD otomatis belum tersedia')+(known.length<holdings.length?' · '+(holdings.length-known.length)+' posisi menunggu harga':'');
+ $('goldTotal').textContent=money(sums.gold)+(state.assets.some(a=>a.kind==='gold'&&value(a)===null)?' *':'');
+ $('goldNote').textContent=state.assets.filter(a=>a.kind==='gold').length+' posisi · '+(quote?'acuan '+fmtDate(quote.goldDate):'harga spot belum tersedia; gunakan harga manual');
+ $('stockTotal').textContent=money(sums.stock)+(state.assets.some(a=>a.kind==='stock'&&value(a)===null)?' *':'');
+ $('stockNote').textContent=state.assets.filter(a=>a.kind==='stock').length+' posisi · harga saham diisi manual (bukan realtime).';
  $('businessTotal').textContent=money(sums.business-deficit);
  $('businessNote').textContent=deficit?'Defisit ekuitas '+money(deficit)+' mengurangi estimasi kekayaan bersih.':'Ekuitas bersih sesuai porsi kepemilikan Anda.';
  $('bankTotal').textContent=money(sums.bank);
@@ -189,7 +205,7 @@ function assetForm(k='house',a=null){
  const options=opts(keys.map(id=>[id,categories[id][0]]),k);
  modal(a?'Ubah aset':'Tambah aset',label('Kategori','<select id="kind" '+(a?'disabled':'')+'>'+options+'</select>')+label('Nama aset','<input name="name" maxlength="90" placeholder="Misalnya rumah tinggal" value="'+esc(a?.name||'')+'" required>')+'<div id="specific"></div>'+(a?'<button type="button" id="del" class="soft warn">Hapus aset</button>':''),async data=>{
   const kind=$('kind').value, item={...(a||{}),kind,id:a?.id||crypto.randomUUID(),name:data.get('name').trim()};
-  for(const [field,v] of data)if(field!=='name')item[field]=['mode','wallet','symbol','bank','accountType','last4','valuationMode','direction','acquiredAt','deviceType'].includes(field)?v.trim():Number(v);
+  for(const [field,v] of data)if(field!=='name')item[field]=field==='ticker'?v.trim().toUpperCase():['mode','wallet','symbol','bank','accountType','last4','valuationMode','direction','acquiredAt','deviceType','goldType','ticker','exchange','currency','broker','priceDate'].includes(field)?v.trim():Number(v);
   if(a&&aiAssetSignature(a)!==aiAssetSignature(item)){delete item.aiValuation;if(item.valuationSource==='ai')item.valuationSource='projection'}
   await commit({...state,assets:a?state.assets.map(old=>old.id===a.id?item:old):[...state.assets,item]});
   if(kind==='crypto'&&item.mode==='auto')void updateCoin(item.symbol);
@@ -198,14 +214,13 @@ function assetForm(k='house',a=null){
   const kind=$('kind').value;
   $('specific').oninput=null;
   if(kind==='crypto'){cryptoForm(a);return}
+  if(kind==='stock'){stockForm(a);return}
+  if(kind==='gold'){goldForm(a);return}
   if(kind==='business'){businessForm(a);return}
   if(kind==='bank'){bankForm(a);return}
   if(['phone','electronics','house','car','bike'].includes(kind)){valuationForm(a,kind);return}
   $('specific').innerHTML=kind==='house'?num('land','Nilai tanah saat ini (Rp)',a?.land)+num('building','Nilai bangunan saat ini (Rp)',a?.building):kind==='gold'?num('grams','Berat (gram)',a?.grams,1e7,'any','0.000001')+num('karat','Kadar (karat)',a?.karat??24,24,'any','0.001')+label('Dasar penilaian','<select name="mode" id="mode">'+opts([['spot','Spot otomatis sesuai kadar'],['manual','Buyback manual per gram aktual']],a?.mode)+'</select>')+'<div id="rateBox"></div>':num('amount',kind==='car'||kind==='bike'?'Estimasi harga jual saat ini (Rp)':'Saldo saat ini (Rp)',a?.amount);
-  if(kind==='gold'){
-   function rateBox(){$('rateBox').innerHTML=$('mode').value==='manual'?num('rate','Harga buyback untuk kadar ini (Rp/gram)',a?.rate,1e10,1,1):'<p class="hint">Berat × kadar/24 × harga spot per gram. Harga jual kembali di toko dapat berbeda.</p>'}
-   $('mode').onchange=rateBox;rateBox();
-  }
+  // Emas ditangani goldForm() khusus di portfolio.js.
  }
  $('kind').onchange=specific;specific();
  if(a)$('del').onclick=()=>{
@@ -219,6 +234,9 @@ $('filter').innerHTML='<option value="">Semua kategori</option>'+opts(keys.map(k
 $('filter').onchange=render;$('add').onclick=()=>assetForm();
 setupCashflow();setupAIValuations();
 $('bankGo').onclick=()=>{$('filter').value='bank';render();$('portofolio').scrollIntoView({behavior:'smooth',block:'start'})};
+for(const [buttonId,categoryId] of [['goldGo','gold'],['stockGo','stock']]){
+ $(buttonId).onclick=()=>{$('filter').value=categoryId;render();$('portofolio').scrollIntoView({behavior:'smooth',block:'start'})};
+}
 $('toggleNet').onclick=()=>{const open=$('netBreakdown').hidden;$('netBreakdown').hidden=!open;$('toggleNet').setAttribute('aria-expanded',String(open));$('toggleNet').textContent=open?'Tutup rincian kekayaan bersih':'Lihat rincian kekayaan bersih';if(open)$('netBreakdown').scrollIntoView({behavior:'smooth',block:'nearest'})};
 $('portfolio').onclick=e=>{const b=e.target.closest('button');if(!b)return;if(b.dataset.new)assetForm(b.dataset.new);else{const a=state.assets.find(v=>v.id===b.dataset.id);if(a)assetForm(a.kind,a)}};
 $('goal').onclick=()=>modal('Target dana darurat',num('monthly','Pengeluaran pokok per bulan (Rp)',state.monthly||'')+num('months','Target perlindungan (bulan)',state.months,120,1,1),d=>commit({...state,monthly:Number(d.get('monthly')),months:Number(d.get('months'))}));

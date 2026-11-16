@@ -135,6 +135,65 @@ function valuationForm(a={},kind='phone'){
  }
  modeBox.onchange=paintFields;parent.oninput=preview;parent.onchange=e=>{if(e.target!==modeBox)preview()};paintFields();
 }
+
+// Portofolio emas (kompatibel dengan format aset emas sejak versi pertama).
+const goldKinds={batangan:'Emas batangan',perhiasan:'Perhiasan emas',digital:'Emas digital',lainnya:'Emas lainnya'};
+function goldForm(a={}){
+ a=a||{};
+ $('specific').innerHTML=
+  label('Jenis emas','<select name="goldType">'+opts(Object.entries(goldKinds),a.goldType||'batangan')+'</select>')+
+  num('grams','Berat emas (gram)',a.grams??'',1e7,'any','0.000001')+
+  num('karat','Kadar emas (karat)',a.karat??24,24,'any','0.001')+
+  num('costTotal','Total modal pembelian (Rp, isi 0 jika tidak diketahui)',a.costTotal??0,1e15)+
+  label('Dasar penilaian','<select name="mode" id="mode">'+opts([['spot','Otomatis: spot emas 24K × kadar'],['manual','Manual: harga buyback aktual per gram']],a.mode||'spot')+'</select>')+
+  '<div id="rateBox"></div><div class="estimate" id="goldPreview" aria-live="polite"></div>'+
+  '<p class="hint">Harga spot memakai acuan emas internasional dan kurs USD/IDR saat data berhasil diambil; bukan jaminan harga buyback toko. Modal dapat dipakai untuk membandingkan untung/rugi yang belum direalisasikan. Catat emas ini satu kali saja.</p>';
+ const paint=()=>{
+  $('rateBox').innerHTML=$('mode').value==='manual'?num('rate','Harga buyback untuk kadar ini (Rp/gram)',a.rate??'',1e10,'any','0.01'):'<p class="hint">Perhitungan: gram × kadar ÷ 24 × harga spot per gram. Jika sumber spot tidak tersedia, nilai ditandai menunggu harga.</p>';
+  preview();
+ };
+ const preview=()=>{
+  const d=new FormData($('form'));
+  const grams=Number(d.get('grams')),karat=Number(d.get('karat')),cost=Number(d.get('costTotal'));
+  const rate=d.get('mode')==='manual'?Number(d.get('rate')):quote?.rate;
+  const current=rate==null?null:grams*(d.get('mode')==='manual'?1:karat/24)*rate;
+  $('goldPreview').textContent=current===null?'Nilai menunggu harga spot. Anda bisa memakai mode manual.':'Nilai estimasi '+money(current)+(cost>0?' · Selisih modal '+(current-cost>=0?'+':'−')+money(Math.abs(current-cost)):'');
+ };
+ $('mode').onchange=paint;$('specific').oninput=preview;paint();
+}
+// Pencatatan saham: harga pasar MANUAL dengan waktu pembaruan, tidak mengarang kuotasi realtime.
+function stockFx(a){return a.currency==='IDR'?1:(a.fxManual||market.fx?.rate||null)}
+function stockValue(a){const fx=stockFx(a);return fx===null?null:a.shares*a.price*fx}
+function stockCostValue(a){const fx=stockFx(a);return fx===null?null:a.shares*a.buyPrice*fx}
+function stockForm(a={}){
+ a=a||{};
+ $('specific').innerHTML=
+  label('Kode saham / ticker','<input name="ticker" maxlength="14" pattern="[A-Za-z0-9.\\-]{1,14}" placeholder="BBCA / TLKM / AAPL" value="'+esc(a.ticker||'')+'" required>')+
+  label('Bursa','<select name="exchange" id="stockExchange">'+opts([['IDX','Indonesia (BEI/IDX)'],['NYSE','Amerika (NYSE)'],['NASDAQ','Amerika (NASDAQ)'],['OTHER','Bursa lainnya']],a.exchange||'IDX')+'</select>')+
+  label('Mata uang harga per lembar','<select name="currency" id="stockCurrency">'+opts([['IDR','Rupiah (IDR)'],['USD','Dolar AS (USD)']],a.currency||'IDR')+'</select>')+
+  num('shares','Jumlah saham (lembar; 1 lot BEI = 100 lembar)',a.shares??'',1e12,'any','0.000001')+
+  num('buyPrice','Harga beli rata-rata per lembar (0 jika tidak tahu)',a.buyPrice??0,1e12,'any')+
+  num('price','Harga terkini per lembar (diisi manual)',a.price??'',1e12,'any','0.000001')+
+  label('Tanggal harga terakhir diperbarui','<input name="priceDate" type="date" min="1900-01-01" max="'+localDay()+'" value="'+esc(a.priceDate||localDay())+'" required>')+
+  label('Sekuritas / broker (opsional)','<input name="broker" maxlength="80" placeholder="Contoh: Stockbit, IPOT" value="'+esc(a.broker||'')+'">')+
+  '<div id="stockFxBox"></div><div class="estimate" id="stockPreview" aria-live="polite"></div>'+
+  '<p class="hint">Harga saham tidak terhubung ke bursa realtime. Perbarui harga per lembar dan tanggal secara manual; kurs USD/IDR dapat mengikuti data Frankfurter jika tersedia. Nilai saham tidak otomatis mengurangi saldo bank. Jika pembelian saham dibayar lewat bank, catat juga mutasi uang keluar agar uang tidak dihitung dua kali.</p>';
+ const paintFx=()=>{
+  $('stockFxBox').innerHTML=$('stockCurrency').value==='USD'
+   ?num('fxManual','Kurs manual Rp/USD (0 untuk kurs otomatis)',a.fxManual??0,1e7,'any') 
+   :'<input type="hidden" name="fxManual" value="0">';
+  preview();
+ };
+ function preview(){
+  const data=new FormData($('form')),shares=Number(data.get('shares')),price=Number(data.get('price')),buy=Number(data.get('buyPrice'));
+  const curr=data.get('currency'),fx=curr==='IDR'?1:(Number(data.get('fxManual'))||market.fx?.rate||null);
+  const lots=data.get('exchange')==='IDX'?' · '+(shares/100).toLocaleString('id-ID',{maximumFractionDigits:4})+' lot':'';
+  $('stockPreview').textContent=fx===null?'Kurs USD belum tersedia. Masukkan kurs manual untuk menghitung nilai dalam rupiah.':
+   'Nilai saham '+money(shares*price*fx)+lots+(buy>0?' · Selisih modal '+(price>=buy?'+':'−')+money(Math.abs((price-buy)*shares*fx)):'');
+ }
+ $('stockCurrency').onchange=paintFx;$('stockExchange').onchange=preview;$('specific').oninput=preview;paintFx();
+}
+
 const bankTypes={tabungan:'Tabungan',giro:'Giro',deposito:'Deposito',lainnya:'Lainnya'};
 function bankTypeName(code){return bankTypes[code]||'Rekening'}
 function bankForm(a={}){
@@ -147,6 +206,19 @@ function bankForm(a={}){
 }
 function details(a){
  if(a.kind==='phone'||a.kind==='electronics'||(a.valuationMode==='auto'&&['car','bike','house'].includes(a.kind)))return (a.kind==='electronics'?'<div class="detail">'+esc(deviceTypes[a.deviceType]||'Elektronik')+'</div>':'')+currentValueHint(a);
+ if(a.kind==='gold'){
+  const amount=a.mode==='manual'?a.grams*a.rate:quote?a.grams*a.karat/24*quote.rate:null;
+  const difference=a.costTotal>0&&amount!==null?'<br>Modal '+money(a.costTotal)+' · '+(amount>=a.costTotal?'Untung belum direalisasi ':'Rugi belum direalisasi ')+money(Math.abs(amount-a.costTotal)):'';
+  return '<div class="detail">'+esc(goldKinds[a.goldType]||'Emas')+' · '+a.grams.toLocaleString('id-ID')+' gram · '+a.karat+'K · '+(a.mode==='spot'?'acuan spot otomatis':'buyback manual')+difference+'</div>';
+ }
+ if(a.kind==='stock'){
+  const amount=stockValue(a),cost=stockCostValue(a);
+  const gain=cost!==null&&a.buyPrice>0?'<br>Modal '+money(cost)+' · '+(amount>=cost?'Untung belum direalisasi ':'Rugi belum direalisasi ')+money(Math.abs(amount-cost)):'';
+  return '<div class="detail">'+esc(a.exchange)+' · '+esc(a.ticker)+' · '+a.shares.toLocaleString('id-ID',{maximumFractionDigits:6})+' lembar'+
+   (a.exchange==='IDX'?' ('+(a.shares/100).toLocaleString('id-ID',{maximumFractionDigits:4})+' lot)':'')+'<br>'+
+   'Harga '+esc(a.currency)+' '+a.price.toLocaleString('id-ID')+' / lembar · '+esc(a.priceDate)+(a.broker?'<br>'+esc(a.broker):'')+
+   (amount===null?'<br>Kurs USD/IDR belum tersedia. Isi kurs manual untuk menghitung.':gain)+'</div>';
+ }
  if(a.kind==='bank')return '<div class="detail">'+esc(a.bank)+' · '+esc(bankTypeName(a.accountType))+(a.last4?' · Rekening ••••'+esc(a.last4):'')+'</div>'; 
  if(a.kind==='business')return '<div class="detail">Aset usaha '+money(businessGross(a))+' · Utang '+money(a.liabilities)+'<br>Porsi Anda '+a.share+'% · Ekuitas '+money(equity(a))+'</div>';
  if(a.kind!=='crypto')return '';

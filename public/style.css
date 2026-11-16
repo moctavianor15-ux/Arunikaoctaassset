@@ -65,3 +65,10 @@
 @media(max-width:560px){.cashBalances .cashBankCard{flex:0 0 204px;min-width:204px}.cashBalances .cashBankCard strong{font-size:17px;white-space:nowrap}}
 
 .aiReason a{color:#176b50;font-size:11px;text-decoration:underline;overflow-wrap:anywhere}
+
+/* V9: status binding AI gratis: kompak & responsif. */
+.aiConnection{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-top:10px;max-width:100%}
+.aiConnection span{font-size:.82rem;color:#3d6658;font-weight:600}
+.aiConnection span.aiProblem{color:#a13b29}
+.aiConnection button{min-height:34px;padding:6px 12px}
+@media(max-width:600px){.aiConnection{align-items:flex-start;flex-direction:column;gap:8px}}

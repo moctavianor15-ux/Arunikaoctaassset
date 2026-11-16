@@ -60,7 +60,7 @@ try{const q=JSON.parse(localStorage.getItem(quoteKey));if(validQuote(q))quote=q}
 async function api(path, options={}){
  const response=await fetch(path,{credentials:'same-origin',cache:'no-store',signal:AbortSignal.timeout(20000),...options});
  if(response.status===401){location.replace('/login');throw Error('Sesi berakhir. Silakan masuk kembali.')}
- const data=await ArunoLoad.read(response);if(!response.ok)throw Error(data.error||'Permintaan gagal.');return data;
+ const data=await ArunoLoad.read(response);if(!response.ok){const reference=path.startsWith('/api/ai/')&&data.requestId?' (Ref: '+data.requestId+' · '+(data.code||'ERROR')+')':'';throw Error((data.error||'Permintaan gagal.')+reference)}return data;
 }
 async function commit(next){
  if(!ready||saving)throw Error('Tunggu hingga penyimpanan selesai.');
@@ -77,7 +77,7 @@ async function boot(){
  try{
  const data=await api('/api/portfolio');if(!valid(data.state))throw Error('Data server tidak valid.');
  ArunoLoad.stage(72,'Memeriksa data aset dan menyiapkan ringkasan…');
- state=data.state;revision=data.revision;render();ArunoLoad.stage(95,'Menyelesaikan tampilan portofolio…');ready=true;$('appShell').hidden=false;ArunoLoad.done();refresh();
+ state=data.state;revision=data.revision;render();ArunoLoad.stage(95,'Menyelesaikan tampilan portofolio…');ready=true;$('appShell').hidden=false;ArunoLoad.done();void checkAIConnection();refresh();
  $('syncStatus').textContent='Terhubung · data tersimpan di server';
  }catch(e){ArunoLoad.fail(e.name==='TimeoutError'?'Koneksi server melewati batas waktu. Coba lagi setelah koneksi stabil.':e.message)}
 }

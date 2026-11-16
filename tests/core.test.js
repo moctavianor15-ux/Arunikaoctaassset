@@ -388,7 +388,7 @@ test('endpoint estimasi AI wajib sesi, binding, Origin; tidak mengubah D1 tanpa 
  assert.equal((await req('/api/portfolio','PUT',{state:next,revision:0},cookie)).status,200);
  assert.equal((await req('/api/ai/estimate','POST',input,cookie,'https://attacker.test')).status,403);
  const missing=await req('/api/ai/estimate','POST',input,cookie);
- assert.equal(missing.status,503);assert.match((await missing.json()).error,/Binding Workers AI/);
+ assert.equal(missing.status,200);assert.equal((await missing.json()).advice.method,'fallback');
  let sent='';env.AI={run:async(model,options)=>{sent=JSON.stringify(options);return {response:'{"adjustment":0.96,"explanation":"Perkiraan penyusutan berbasis kondisi dan usia aset."}'}}};
  const adviceRes=await req('/api/ai/estimate','POST',input,cookie);assert.equal(adviceRes.status,200);
  const {advice}=await adviceRes.json();assert(advice.amount>0);assert.equal(advice.sourceType,'model-tanpa-data-pasar');
@@ -465,7 +465,7 @@ test('V10 status menunjukkan versi backend, tanpa melakukan panggilan AI',async(
  const {req,env}=setup();const login=await req('/api/login','POST',{username:'owner',password});const cookie=login.headers.get('set-cookie');
  env.AI={run:async()=>{throw Error('Seharusnya tidak dipanggil')}};
  const r=await req('/api/ai/status','GET',undefined,cookie);assert.equal(r.status,200);
- const data=await r.json();assert.equal(data.version,'v10-2026-11-16');assert.equal(data.configured,true);assert.equal(data.tested,false);
+ const data=await r.json();assert.equal(data.version,'v11-2026-11-16');assert.equal(data.configured,true);assert.equal(data.tested,false);
 });
 test('V10 diagnose memeriksa JSON nyata dari GLM tanpa membocorkan aset',async()=>{
  const {req,env}=setup();const login=await req('/api/login','POST',{username:'owner',password});const cookie=login.headers.get('set-cookie');
@@ -473,7 +473,7 @@ test('V10 diagnose memeriksa JSON nyata dari GLM tanpa membocorkan aset',async()
  assert.equal((await req('/api/ai/diagnose','POST',{},undefined)).status,401);
  assert.equal((await req('/api/ai/diagnose','POST',{},cookie,'https://attacker.test')).status,403);
  const response=await req('/api/ai/diagnose','POST',{},cookie);assert.equal(response.status,200);
- const data=await response.json();assert.equal(data.ok,true);assert.equal(data.version,'v10-2026-11-16');assert.equal(calls,1);
+ const data=await response.json();assert.equal(data.ok,true);assert.equal(data.version,'v11-2026-11-16');assert.equal(calls,1);
 });
 test('V10 diagnose beralih ke Gemma setelah GLM gagal',async()=>{
  const {diagnoseAI}=await import('../src/valuation-ai.js');const used=[];
@@ -492,7 +492,7 @@ test('V10 estimasi AI provider unavailable memberi 503 dengan kode, bukan 502 ge
  await req('/api/portfolio','PUT',{state:{...state,assets:[...state.assets,phone]},revision:0},cookie);
  let calls=0;env.AI={run:async()=>{calls++;throw Object.assign(Error('AI model not found'),{status:410,code:5028})}};
  const r=await req('/api/ai/estimate','POST',{assetId:'px',condition:'good',comparables:[],sourceUrl:'',note:''},cookie);
- assert.equal(r.status,503);const body=await r.json();assert.equal(body.code,'AI_MODEL_UNAVAILABLE');assert.equal(calls,2);assert.match(body.requestId,/^[a-f0-9]{8}$/);
+ assert.equal(r.status,200);const body=await r.json();assert.equal(body.advice.method,'fallback');assert.match(body.advice.reason,/BUKAN penilaian AI/);assert.equal(calls,2);
 });
 test('V10 parsing respons bertingkat dan alasan berisi kurung kurawal',async()=>{
  const {parseReply}=await import('../src/valuation-ai.js');
@@ -504,4 +504,63 @@ test('V10 429 khusus per-model tetap mencoba model cadangan',async()=>{
  const {diagnoseAI}=await import('../src/valuation-ai.js');let calls=0;
  const result=await diagnoseAI({AI:{run:async()=>{calls++;if(calls===1)throw Object.assign(Error('Per-model rate limit'),{status:429});return {response:'{"adjustment":1,"explanation":"Cadangan berfungsi."}'}}}});
  assert.equal(calls,2);assert.equal(result.ok,true);assert.match(result.model,/gemma/);
+});
+
+// V11: nama lengkap dikenali sebelum hitung dan pencarian pasar wajib persetujuan.
+test('V11 mengenali Fortuner MT 2012 dan iPhone 18 Pro 512 GB tanpa mengklaim model resmi',async()=>{
+ const {identifyAsset}=await import('../src/asset-identity.js');
+ const car=identifyAsset({kind:'car',name:'FORTUNER 2012 MT'});
+ assert.equal(car.brand,'Toyota');assert.equal(car.model,'Fortuner');assert.equal(car.year,2012);assert.equal(car.transmission,'MT');assert.equal(car.matchLevel,'rinci');
+ const phone=identifyAsset({kind:'phone',name:'HP iPhone 18 Pro 512 GB'});
+ assert.equal(phone.brand,'Apple');assert.equal(phone.model,'iPhone 18');assert.equal(phone.variant,'Pro');assert.equal(phone.storageGB,512);assert.match(phone.warning,/bukan verifikasi/);
+ const ambiguous=identifyAsset({kind:'car',name:'Mobil keluarga'});assert.equal(ambiguous.matchLevel,'kurang');
+});
+test('V11 ekstraksi nominal rupiah dari cuplikan dan penolakan varian yang salah',async()=>{
+ const {extractPriceCandidates,findMarketOffers}=await import('../src/market-search.js');
+ assert.deepEqual(extractPriceCandidates('Rp 215.000.000'),[215000000]);
+ assert.deepEqual(extractPriceCandidates('Rp 21,5 juta'),[21500000]);
+ const offers=[
+  {url:'https://contoh1.id/a',title:'Apple iPhone 18 Pro Max 512GB',description:'Rp 21.000.000'},
+  {url:'https://contoh2.id/b',title:'Apple iPhone 18 Pro 256GB',description:'Rp 15.000.000'},
+  {url:'https://contoh3.id/c',title:'Apple iPhone 18 Pro 512GB',description:'Harga penawaran Rp 18.000.000'},
+  {url:'https://contoh4.id/d',title:'iPhone 18 Pro 512 GB Apple',description:'Harga Rp 20,5 juta'},
+  {url:'https://contoh5.id/e',title:'Apple iPhone 18 Pro 512GB',description:'tanpa harga disebut'}
+ ];
+ let calls=0;
+ const env={MARKET_SEARCH_ENABLED:'true',AI:{websearch:async()=>{calls++;return Response.json({items:offers})}}};
+ const market=await findMarketOffers(env,{kind:'phone',name:'iPhone 18 Pro 512 GB'});
+ assert.equal(market.status,'offers');assert.deepEqual(market.prices,[18000000,20500000]);assert.equal(market.sources.length,2);assert.equal(calls,1);
+});
+test('V11 mode gratis tidak melakukan Web Search API dan mode live wajib consent + flag server',async()=>{
+ const {req,env}=setup();const login=await req('/api/login','POST',{username:'owner',password}),cookie=login.headers.get('set-cookie');
+ const car={id:'fortuner',kind:'car',name:'Fortuner 2012 MT',amount:175000000};
+ const next={...state,assets:[...state.assets,car]};await req('/api/portfolio','PUT',{state:next,revision:0},cookie);
+ const input={assetId:car.id,condition:'good',comparables:[],sourceUrl:'',note:'',itemName:car.name};
+ let runs=0,searches=0;
+ env.AI={run:async()=>{runs++;return {response:'{"adjustment":1,"explanation":"Penilaian indikatif, bergantung kondisi dan kilometer."}'}},websearch:async()=>{searches++;return Response.json({items:[]})}};
+ assert.equal((await req('/api/ai/estimate','POST',{...input,marketMode:'free'},cookie)).status,200);
+ assert.equal(searches,0);assert.equal(runs,1);
+ assert.equal((await req('/api/ai/estimate','POST',{...input,marketMode:'live',consentPaidSearch:false},cookie)).status,400);
+ assert.equal(searches,0);
+ const disabled=await req('/api/ai/estimate','POST',{...input,marketMode:'live',consentPaidSearch:true},cookie);
+ assert.equal(disabled.status,200);assert.equal((await disabled.json()).advice.marketStatus,'disabled');assert.equal(searches,0);
+ env.MARKET_SEARCH_ENABLED='true';
+ const live=await req('/api/ai/estimate','POST',{...input,marketMode:'live',consentPaidSearch:true},cookie);
+ assert.equal(live.status,200);assert.equal((await live.json()).advice.marketStatus,'insufficient');assert.equal(searches,1);
+});
+test('V11 endpoint deteksi spesifikasi harus login, tidak memanggil model dan tidak mengubah DB',async()=>{
+ const {req,env}=setup();const path='/api/ai/identify?kind=phone&name='+encodeURIComponent('iPhone 18 Pro 512 GB');
+ assert.equal((await req(path)).status,401);
+ const login=await req('/api/login','POST',{username:'owner',password}),cookie=login.headers.get('set-cookie');
+ const x=await (await req(path,'GET',undefined,cookie)).json();assert.equal(x.identity.storageGB,512);
+ assert.equal((await req('/api/ai/identify?kind=car&name=', 'GET',undefined,cookie)).status,400);
+ const portfolio=await (await req('/api/portfolio','GET',undefined,cookie)).json();assert.equal(portfolio.revision,0);
+});
+test('V11 fallback tidak boleh dipilih menjadi nilai kekayaan bersih dan tidak mengubah rekening',async()=>{
+ const {assetSignature,fallbackEstimate}=await import('../src/valuation-ai.js');
+ const phone={id:'phone',kind:'phone',name:'iPhone 18 Pro 512 GB',purchasePrice:25000000,acquiredAt:'2026-09-16',valuationMode:'auto',direction:'down',annualRate:25};
+ const data=fallbackEstimate(phone,{condition:'good',note:'',sourceUrl:'',comparables:[]},new Date('2026-11-16T00:00:00Z'));
+ assert.equal(data.method,'fallback');assert(data.amount>0);assert.equal(data.signature,assetSignature(phone));
+ assert(valid({...state,assets:[...state.assets,{...phone,aiValuation:data,valuationSource:'projection'}]}));
+ assert(!valid({...state,assets:[...state.assets,{...phone,aiValuation:data,valuationSource:'ai'}]}));
 });

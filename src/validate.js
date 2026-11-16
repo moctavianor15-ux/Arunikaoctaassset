@@ -43,13 +43,24 @@ function validUserAI(a){
  if(a.valuationSource!==undefined&&!['projection','user','ai'].includes(a.valuationSource))return false;
  if(a.valuationSource==='user'&&!number(a.ownerValue))return false;
  if(a.aiValuation===undefined)return a.valuationSource!=='ai';
+ if(a.valuationSource==='ai'&&a.aiValuation?.method==='fallback')return false;
  const v=a.aiValuation;
  return v&&number(v.amount)&&number(v.lower)&&number(v.upper)&&v.lower<=v.amount&&v.amount<=v.upper&&number(v.baseline)&&
   typeof v.asOf==='string'&&Number.isFinite(Date.parse(v.asOf))&&v.asOf.length<=40&&
   typeof v.model==='string'&&v.model.length<=120&&['rendah','sedang'].includes(v.confidence)&&
-  ['input-pengguna','model-tanpa-data-pasar'].includes(v.sourceType)&&typeof v.reason==='string'&&v.reason.length<=400&&
+  ['input-pengguna','model-tanpa-data-pasar','hasil-penelusuran'].includes(v.sourceType)&&typeof v.reason==='string'&&v.reason.length<=400&&
   Number.isInteger(v.comparablesUsed)&&v.comparablesUsed>=0&&v.comparablesUsed<=3&&Array.isArray(v.comparablePrices)&&v.comparablePrices.length===v.comparablesUsed&&v.comparablePrices.every(x=>Number.isSafeInteger(x)&&x>0&&x<=1e15)&&
   typeof v.sourceUrl==='string'&&v.sourceUrl.length<=300&&(!v.sourceUrl||(/^https:\/\/[^\s]+$/i.test(v.sourceUrl)&&!v.sourceUrl.includes('@')))&&
+  (v.method===undefined||['ai','fallback'].includes(v.method))&&
+  (v.marketStatus===undefined||['not-requested','disabled','unsupported','incomplete','insufficient','offers','unavailable'].includes(v.marketStatus))&&
+  (v.marketNote===undefined||(typeof v.marketNote==='string'&&v.marketNote.length<=240))&&
+  (v.identity===undefined||(v.identity&&typeof v.identity.name==='string'&&v.identity.name.length<=90&&
+   typeof v.identity.kind==='string'&&typeof v.identity.matchLevel==='string'&&
+   [v.identity.brand,v.identity.model,v.identity.variant,v.identity.transmission,v.identity.query,v.identity.warning].every(x=>x===null||typeof x==='string'&&x.length<=250)&&
+   (v.identity.year===null||Number.isInteger(v.identity.year))&&(v.identity.storageGB===null||Number.isInteger(v.identity.storageGB))))&&
+  (v.marketSources===undefined||(Array.isArray(v.marketSources)&&v.marketSources.length<=5&&v.marketSources.every(x=>
+   x&&typeof x.title==='string'&&x.title.length<=180&&typeof x.url==='string'&&x.url.length<=700&&/^https:\/\/[^\s@]+$/i.test(x.url)&&
+   number(x.price)&&x.price>0&&typeof x.note==='string'&&x.note.length<=150)))&&
   ['new','good','fair','poor'].includes(v.condition)&&typeof v.signature==='string'&&v.signature.length<=600&&v.signature===assetSignature(a);
 }
 function validCrypto(a){

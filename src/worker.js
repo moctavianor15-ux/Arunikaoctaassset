@@ -1,6 +1,8 @@
 import {digest,token,verifyPassword,credentialVersion} from './auth.js';
 import {valid} from './validate.js';
-import {assessInput,estimateAI,valuedKinds,modelNames,diagnoseAI,aiBackendVersion} from './valuation-ai.js';
+import {assessInput,estimateAI,fallbackEstimate,valuedKinds,modelNames,diagnoseAI,aiBackendVersion} from './valuation-ai.js';
+import {identifyAsset} from './asset-identity.js';
+import {findMarketOffers,searchEnabled} from './market-search.js';
 const json=(data,status=200,headers={})=>new Response(JSON.stringify(data),{status,headers:{'Content-Type':'application/json; charset=utf-8',...headers}});
 const fail=(message,status,code)=>{throw Object.assign(Error(message),{status,code})};
 const cookie=t=>`__Host-arunika=${t}; Path=/; HttpOnly; Secure; SameSite=Strict${t?'':'; Max-Age=0'}`;
@@ -58,7 +60,12 @@ async function route(req,env){
  }
  if(p==='/api/ai/status'&&req.method==='GET'){
   // Memeriksa binding saja, TIDAK memanggil model dan tidak memakan kuota.
-  return json({configured:!!(env.AI&&typeof env.AI.run==='function'),version:aiBackendVersion,provider:'Cloudflare Workers AI',model:modelNames[0],backupModel:modelNames[1],tested:false,marketRealtime:false,freeAllowance:'Alokasi gratis Workers AI berlaku sesuai kuota akun; pemakaian berlebih pada paket berbayar dapat ditagih.'});
+  return json({configured:!!(env.AI&&typeof env.AI.run==='function'),version:aiBackendVersion,provider:'Cloudflare Workers AI',model:modelNames[0],backupModel:modelNames[1],tested:false,marketRealtime:searchEnabled(env)&&typeof env.AI?.websearch==='function',marketSearchEnabled:searchEnabled(env),freeAllowance:'Alokasi gratis Workers AI berlaku sesuai kuota akun; pemakaian berlebih pada paket berbayar dapat ditagih.'});
+ }
+ if(p==='/api/ai/identify'&&req.method==='GET'){
+  const kind=u.searchParams.get('kind')||'',name=u.searchParams.get('name')||'';
+  if(!valuedKinds.includes(kind)||!name.trim()||name.length>90)fail('Nama dan kategori barang tidak valid.',400);
+  return json({identity:identifyAsset({kind,name})});
  }
  if(p==='/api/ai/diagnose'&&req.method==='POST'){
   // Uji panggilan model yang sesungguhnya; hanya atas permintaan pengguna dan terbatas.
@@ -78,7 +85,20 @@ async function route(req,env){
   if(!asset||!valuedKinds.includes(asset.kind))fail('Aset yang dapat dinilai AI tidak ditemukan.',404);
   // Batas harian untuk mengurangi risiko konsumsi Neurons berlebihan; bukan jaminan tagihan nol.
   await limit(env,'ai-day',30,now,86400-now%86400);
-  const advice=await estimateAI(env,asset,input);
+  // Pencarian terbaru sengaja opsional: bisa berbayar. Wajib persetujuan di UI dan aktivasi di backend.
+  let market=null;
+  if(input.marketMode==='live'){
+   if(!searchEnabled(env))market={status:'disabled',sources:[],prices:[],note:'Pencarian berbayar belum diaktifkan dalam konfigurasi situs.'};
+   else {await limit(env,'ai-market-day',10,now,86400-now%86400);market=await findMarketOffers(env,{...asset,name:input.itemName||asset.name})}
+  }
+  let advice;
+  try{advice=await estimateAI(env,asset,input,new Date(),market)}
+  catch(e){
+   // Hanya kegagalan layanan AI yang boleh memakai hasil fallback, bukan input/kesalahan database.
+   if(!['AI_QUOTA','AI_ACCESS','AI_MODEL_UNAVAILABLE','AI_BAD_RESPONSE','AI_PROVIDER_ERROR','AI_BINDING_MISSING'].includes(e.code))throw e;
+   console.warn('[Arunika AI] using non-AI fallback',aiBackendVersion,e.code);
+   advice=fallbackEstimate(asset,input,new Date(),market);
+  }
   return json({advice});
  }
  if(p==='/api/portfolio'&&req.method==='GET'){

@@ -1,9 +1,10 @@
+import {identifyAsset} from './asset-identity.js';
 // Arunika V10: saran AI Cloudflare. Seluruh nilai akhir divalidasi/dihitung di server.
 // Model gratis-terdukung (dalam alokasi Workers AI), failover maksimal 2 percobaan.
 export const valuedKinds=['house','car','bike','phone','electronics'];
 export const modelNames=['@cf/zai-org/glm-4.7-flash','@cf/google/gemma-4-26b-a4b-it'];
 export const modelName=modelNames[0];
-export const aiBackendVersion='v10-2026-11-16';
+export const aiBackendVersion='v11-2026-11-16';
 const cap=(n,min,max)=>Math.max(min,Math.min(max,n));
 const validMoney=n=>typeof n==='number'&&Number.isFinite(n)&&n>=0&&n<=1e15;
 function projection(value,date,direction,rate,today){
@@ -63,6 +64,9 @@ export function assessInput(request){
  if(!request||typeof request.assetId!=='string'||!/^[-\w]{1,80}$/.test(request.assetId))return null;
  if(!['new','good','fair','poor'].includes(request.condition)||typeof request.note!=='string'||request.note.length>180)return null;
  if(!Array.isArray(request.comparables)||request.comparables.length>3||!request.comparables.every(v=>Number.isSafeInteger(v)&&v>0&&v<=1e15))return null;
+ if(request.marketMode!==undefined&&!['free','live'].includes(request.marketMode))return null;
+ if(request.marketMode==='live'&&request.consentPaidSearch!==true)return null;
+ if(request.itemName!==undefined&&(typeof request.itemName!=='string'||!request.itemName.trim()||request.itemName.length>90))return null;
  if(typeof request.sourceUrl!=='string'||request.sourceUrl.length>300||request.sourceUrl&&(!/^https:\/\/[^\s]+$/i.test(request.sourceUrl)||request.sourceUrl.includes('@')))return null;
  return request;
 }
@@ -108,20 +112,24 @@ export async function diagnoseAI(env){
  }
  throw serviceError(failures);
 }
-export async function estimateAI(env,a,req,now=new Date()){
+export async function estimateAI(env,a,req,now=new Date(),market=null){
  if(!env.AI||typeof env.AI.run!=='function')throw Object.assign(Error('Binding Workers AI bernama AI belum diatur pada Cloudflare Production. Tambahkan binding AI lalu deploy ulang.'),{status:503,code:'AI_BINDING_MISSING'});
  const parts=Object.fromEntries(new Intl.DateTimeFormat('en-US',{timeZone:'Asia/Jakarta',year:'numeric',month:'2-digit',day:'2-digit'}).formatToParts(now).map(p=>[p.type,p.value]));
  const today=parts.year+'-'+parts.month+'-'+parts.day,base=baseline(a,today);
  if(!validMoney(base))throw Object.assign(Error('Nilai dasar aset belum valid.'),{status:400,code:'AI_BASE_INVALID'});
+ const identity=identifyAsset({...a,name:req.itemName||a.name});
  const samples=[...req.comparables].sort((x,y)=>x-y);
- const med=samples.length?samples[Math.floor(samples.length/2)]:null;
- const midpoint=med===null?base:base*.35+med*.65;
+ const searched=market?.status==='offers'&&market.prices.length>=2?market.prices:[];
+ const sourcePrices=searched.length?searched:samples;
+ const med=sourcePrices.length?(sourcePrices.length%2?sourcePrices[(sourcePrices.length-1)/2]:(sourcePrices[sourcePrices.length/2-1]+sourcePrices[sourcePrices.length/2])/2):null;
+ const midpoint=med===null?base:base*(searched.length?.20:.35)+med*(searched.length?.80:.65);
  const prompt=[
   'Anda ahli penilaian indikatif aset pribadi di Indonesia. Tidak memiliki akses internet atau harga pasar realtime.',
   'Jawab satu JSON tanpa Markdown: {"adjustment":1.0,"explanation":"Satu kalimat singkat Bahasa Indonesia"}.',
   'adjustment HARUS angka 0.90–1.10. Pertimbangkan kondisi, umur dan spesifikasi. Jangan menciptakan data harga pasar.',
   'URL adalah referensi pengguna, bukan bukti telah mengunjungi situs. Tanpa pembanding, akui hanya asumsi penyusutan/kenaikan.',
-  JSON.stringify({jenis:a.kind,nama:a.name,tipe:a.deviceType||null,tanggalPerolehan:a.acquiredAt||null,hargaDasarRupiah:Math.round(base),kondisi:req.condition,catatan:req.note,hargaPembandingDariPengguna:req.comparables,referensiUser:req.sourceUrl||null,tanggalPenilaian:today})
+  'Identifikasi barang berdasar nama, spesifikasi, tahun dan kapasitas. Jangan klaim model resmi tersedia tanpa verifikasi.',
+  JSON.stringify({jenis:a.kind,nama:identity.name,identitasTerdeteksi:identity,tipe:a.deviceType||null,tanggalPerolehan:a.acquiredAt||null,hargaDasarRupiah:Math.round(base),kondisi:req.condition,catatan:req.note,hargaPembandingDariPengguna:req.comparables,hargaPenawaranDariPencarian:searched,referensiUser:req.sourceUrl||null,tanggalPenilaian:today})
  ].join('\n');
  const messages=[{role:'system',content:'Berikan hanya objek JSON berisi adjustment dan explanation, tanpa penalaran, tanpa klaim akses web.'},{role:'user',content:prompt}];
  const failures=[];
@@ -132,13 +140,13 @@ export async function estimateAI(env,a,req,now=new Date()){
    const response=await env.AI.run(model,opts);
    const data=parseReply(response);
    const amount=Math.round(cap(midpoint*data.adjustment,0,1e15));
-   const spread=samples.length>=3?.13:samples.length>=1?.2:.30;
+   const spread=searched.length>=3?.16:searched.length>=2?.22:samples.length>=3?.13:samples.length>=1?.2:.30;
    return {
     amount,lower:Math.max(0,Math.round(amount*(1-spread))),upper:Math.min(1e15,Math.round(amount*(1+spread))),
     baseline:Math.round(base),asOf:now.toISOString(),model,
-    confidence:samples.length>=3?'sedang':'rendah',sourceType:samples.length?'input-pengguna':'model-tanpa-data-pasar',
+    confidence:searched.length>=2||samples.length>=3?'sedang':'rendah',sourceType:searched.length?'hasil-penelusuran':samples.length?'input-pengguna':'model-tanpa-data-pasar',
     reason:data.explanation,comparablesUsed:samples.length,comparablePrices:samples,sourceUrl:req.sourceUrl,
-    condition:req.condition,signature:assetSignature(a)
+    condition:req.condition,signature:assetSignature(a),identity,marketStatus:market?.status||'not-requested',marketNote:market?.note||'',marketSources:searched.length?(market.sources||[]):[],method:'ai'
    };
   }catch(e){
    const kind=aiFailureType(e);failures.push(kind);
@@ -148,4 +156,22 @@ export async function estimateAI(env,a,req,now=new Date()){
   }
  }
  throw serviceError(failures);
+}
+
+// Jika semua model gagal, UI tetap memiliki proyeksi aman dan diberi label BUKAN hasil AI.
+export function fallbackEstimate(a,req,now=new Date(),market=null){
+ const today=new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Jakarta',year:'numeric',month:'2-digit',day:'2-digit'}).format(now);
+ const base=baseline(a,today);
+ const identity=identifyAsset({...a,name:req.itemName||a.name});
+ const samples=[...req.comparables].sort((x,y)=>x-y);
+ const searched=market?.status==='offers'&&market.prices.length>=2?market.prices:[];
+ const reference=searched.length?searched:samples;
+ const med=reference.length?(reference.length%2?reference[(reference.length-1)/2]:(reference[reference.length/2-1]+reference[reference.length/2])/2):null;
+ const amount=Math.round(cap(med===null?base:base*(searched.length?.2:.35)+med*(searched.length?.8:.65),0,1e15));
+ return {amount,lower:Math.max(0,Math.round(amount*.7)),upper:Math.min(1e15,Math.round(amount*1.3)),baseline:Math.round(base),asOf:now.toISOString(),
+  model:'Perhitungan rumus Arunika (tanpa respons AI)',confidence:'rendah',
+  sourceType:searched.length?'hasil-penelusuran':samples.length?'input-pengguna':'model-tanpa-data-pasar',
+  reason:'AI belum berhasil merespons. Angka ini berasal dari proyeksi dan/atau harga pembanding, BUKAN penilaian AI atau harga transaksi terverifikasi.',
+  comparablesUsed:samples.length,comparablePrices:samples,sourceUrl:req.sourceUrl,condition:req.condition,signature:assetSignature(a),identity,
+  marketStatus:market?.status||'not-requested',marketNote:market?.note||'',marketSources:searched.length?(market.sources||[]):[],method:'fallback'};
 }

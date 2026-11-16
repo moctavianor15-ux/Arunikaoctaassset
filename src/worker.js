@@ -1,8 +1,8 @@
 import {digest,token,verifyPassword,credentialVersion} from './auth.js';
 import {valid} from './validate.js';
-import {assessInput,estimateAI,valuedKinds} from './valuation-ai.js';
+import {assessInput,estimateAI,valuedKinds,modelNames,diagnoseAI,aiBackendVersion} from './valuation-ai.js';
 const json=(data,status=200,headers={})=>new Response(JSON.stringify(data),{status,headers:{'Content-Type':'application/json; charset=utf-8',...headers}});
-const fail=(message,status)=>{throw Object.assign(Error(message),{status})};
+const fail=(message,status,code)=>{throw Object.assign(Error(message),{status,code})};
 const cookie=t=>`__Host-arunika=${t}; Path=/; HttpOnly; Secure; SameSite=Strict${t?'':'; Max-Age=0'}`;
 function harden(response){
  const r=new Response(response.body,response); const h=r.headers;
@@ -18,9 +18,9 @@ async function body(req,max){
  for(;;){const {value,done}=await reader.read();if(done)break;size+=value.length;if(size>max){await reader.cancel();fail('Data terlalu besar.',413)}chunks.push(value)}
  try{return JSON.parse(Buffer.concat(chunks).toString('utf8'))}catch{fail('JSON tidak valid.',400)}
 }
-async function limit(env,key,max,now){
- const row=await env.DB.prepare('INSERT INTO attempts(key,count,expires) VALUES (?,1,?) ON CONFLICT(key) DO UPDATE SET count=CASE WHEN expires<=? THEN 1 ELSE count+1 END, expires=CASE WHEN expires<=? THEN excluded.expires ELSE expires END RETURNING count').bind(key,now+900,now,now).first();
- if(row.count>max)fail('Terlalu banyak percobaan. Tunggu 15 menit lalu coba kembali.',429);
+async function limit(env,key,max,now,ttl=900){
+ const row=await env.DB.prepare('INSERT INTO attempts(key,count,expires) VALUES (?,1,?) ON CONFLICT(key) DO UPDATE SET count=CASE WHEN expires<=? THEN 1 ELSE count+1 END, expires=CASE WHEN expires<=? THEN excluded.expires ELSE expires END RETURNING count').bind(key,now+ttl,now,now).first();
+ if(row.count>max)fail(key==='ai-day'?'Batas 30 permintaan AI Arunika per hari tercapai. Coba lagi setelah 00.00 UTC.':'Terlalu banyak percobaan. Tunggu 15 menit lalu coba kembali.',429);
 }
 async function session(req,env,now){
  const raw=req.headers.get('cookie')?.match(/(?:^|;\s*)__Host-arunika=([a-f0-9]{64})(?:;|$)/)?.[1];
@@ -56,6 +56,16 @@ async function route(req,env){
  if(p==='/api/logout'&&req.method==='POST'){
   await env.DB.prepare('DELETE FROM sessions WHERE token_hash=?').bind(s.token_hash).run();return json({ok:true},200,{'Set-Cookie':cookie('')});
  }
+ if(p==='/api/ai/status'&&req.method==='GET'){
+  // Memeriksa binding saja, TIDAK memanggil model dan tidak memakan kuota.
+  return json({configured:!!(env.AI&&typeof env.AI.run==='function'),version:aiBackendVersion,provider:'Cloudflare Workers AI',model:modelNames[0],backupModel:modelNames[1],tested:false,marketRealtime:false,freeAllowance:'Alokasi gratis Workers AI berlaku sesuai kuota akun; pemakaian berlebih pada paket berbayar dapat ditagih.'});
+ }
+ if(p==='/api/ai/diagnose'&&req.method==='POST'){
+  // Uji panggilan model yang sesungguhnya; hanya atas permintaan pengguna dan terbatas.
+  await limit(env,'ai-diagnose-day',10,now,86400-now%86400);
+  await limit(env,'ai-ip:'+digest(req.headers.get('CF-Connecting-IP')||'local'),20,now);
+  return json(await diagnoseAI(env));
+ }
  if(p==='/api/ai/estimate'&&req.method==='POST'){
   // Autentikasi, Origin dan rate-limit telah diterapkan sebelum panggilan AI.
   await limit(env,'ai-global',50,now);
@@ -66,6 +76,8 @@ async function route(req,env){
   if(!record)fail('Data portofolio belum tersedia.',503);
   const asset=JSON.parse(record.data).assets?.find(a=>a.id===input.assetId);
   if(!asset||!valuedKinds.includes(asset.kind))fail('Aset yang dapat dinilai AI tidak ditemukan.',404);
+  // Batas harian untuk mengurangi risiko konsumsi Neurons berlebihan; bukan jaminan tagihan nol.
+  await limit(env,'ai-day',30,now,86400-now%86400);
   const advice=await estimateAI(env,asset,input);
   return json({advice});
  }
@@ -84,6 +96,13 @@ async function route(req,env){
  return env.ASSETS.fetch(req);
 }
 export default {
- async fetch(req,env){try{return harden(await route(req,env))}catch(e){if(/no such table|no such column/i.test(e.message||''))e=Object.assign(Error('Struktur database belum siap. Jalankan migrations/0001.sql di D1 Console, lalu coba kembali.'),{status:503});return harden(json({error:e.status?e.message:'Layanan belum dapat memproses permintaan. Coba kembali.'},e.status||500))}},
+ async fetch(req,env){try{return harden(await route(req,env))}catch(e){
+  if(/no such table|no such column/i.test(e.message||''))e=Object.assign(Error('Struktur database belum siap. Jalankan migrations/0001.sql di D1 Console, lalu coba kembali.'),{status:503,code:'DATABASE_SCHEMA'});
+  const aiRequest=new URL(req.url).pathname.startsWith('/api/ai/');
+  const requestId=aiRequest?crypto.randomUUID().slice(0,8):undefined;
+  const code=typeof e.code==='string'&&/^[A-Z_]{3,40}$/.test(e.code)?e.code:(aiRequest?'AI_UNEXPECTED':'REQUEST_FAILED');
+  if(aiRequest)console.warn('[Arunika AI] request error:',aiBackendVersion,requestId,code,'HTTP',e.status||500);
+  return harden(json({error:e.status?e.message:'Layanan belum dapat memproses permintaan. Coba kembali.',...(aiRequest?{code,requestId,version:aiBackendVersion}:{})},e.status||500));
+ }},
  async scheduled(event,env){const now=Math.floor(Date.now()/1000);await env.DB.batch([env.DB.prepare('DELETE FROM sessions WHERE expires<=?').bind(now),env.DB.prepare('DELETE FROM attempts WHERE expires<=?').bind(now)])}
 };

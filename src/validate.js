@@ -1,5 +1,5 @@
 import {assetSignature} from './valuation-ai.js';
-const keys=['house','car','bike','gold','crypto','business','bank','phone','electronics','emergency','spending'];
+const keys=['house','car','bike','gold','stock','crypto','business','bank','phone','electronics','emergency','spending'];
 const coins = ['BTC','ETH','SOL','XRP','BNB','ADA','DOGE','USDT','USDC'];
 const businessFields = {
  cash:'Kas dan saldo bank usaha', inventory:'Persediaan barang', receivables:'Piutang yang diperkirakan tertagih',
@@ -13,7 +13,9 @@ function valid(s){
   if(!a||!keys.includes(a.kind)||typeof a.id!=='string'||!/^[-\w]{1,80}$/.test(a.id)||ids.has(a.id)||typeof a.name!=='string'||!a.name.trim()||a.name.length>90)return false;
   ids.add(a.id);
   if(a.kind==='house')return number(a.land)&&number(a.building)&&validHouseValuation(a);
-  if(a.kind==='gold')return number(a.grams,1e7)&&a.grams>0&&number(a.karat,24)&&a.karat>0&&['spot','manual'].includes(a.mode)&&(a.mode==='spot'||(number(a.rate,1e10)&&a.rate>0));
+  if(a.kind==='gold')return number(a.grams,1e7)&&a.grams>0&&number(a.karat,24)&&a.karat>0&&['spot','manual'].includes(a.mode)&&(a.mode==='spot'||(number(a.rate,1e10)&&a.rate>0))&&
+    (a.goldType===undefined||['batangan','perhiasan','digital','lainnya'].includes(a.goldType))&&(a.costTotal===undefined||number(a.costTotal));
+  if(a.kind==='stock')return validStock(a);
   if(a.kind==='crypto')return validCrypto(a);
   if(a.kind==='bank')return number(a.amount)&&typeof a.bank==='string'&&a.bank.trim().length>0&&a.bank.length<=60&&['tabungan','giro','deposito','lainnya'].includes(a.accountType)&&typeof a.last4==='string'&&(!a.last4||/^[0-9]{4}$/.test(a.last4));
   if(a.kind==='phone'||a.kind==='electronics')return validElectronics(a);
@@ -62,6 +64,13 @@ function validUserAI(a){
    x&&typeof x.title==='string'&&x.title.length<=180&&typeof x.url==='string'&&x.url.length<=700&&/^https:\/\/[^\s@]+$/i.test(x.url)&&
    number(x.price)&&x.price>0&&typeof x.note==='string'&&x.note.length<=150)))&&
   ['new','good','fair','poor'].includes(v.condition)&&typeof v.signature==='string'&&v.signature.length<=600&&v.signature===assetSignature(a);
+}
+function validStock(a){
+ return typeof a.ticker==='string'&&/^[A-Z0-9.-]{1,14}$/.test(a.ticker)&&
+  ['IDX','NYSE','NASDAQ','OTHER'].includes(a.exchange)&&['IDR','USD'].includes(a.currency)&&
+  number(a.shares,1e12)&&a.shares>0&&number(a.price,1e12)&&a.price>0&&
+  number(a.buyPrice,1e12)&&number(a.fxManual,1e7)&&
+  typeof a.broker==='string'&&a.broker.length<=80&&validDay(a.priceDate);
 }
 function validCrypto(a){
  if(!['balance','auto','manual'].includes(a.mode)||typeof a.wallet!=='string'||a.wallet.length>80||!number(a.fxManual,1e7)||!number(a.cost,1e12))return false;

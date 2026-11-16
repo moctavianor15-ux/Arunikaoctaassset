@@ -32,7 +32,7 @@ async function session(req,env,now){
 async function route(req,env){
  const u=new URL(req.url),p=u.pathname,now=Math.floor(Date.now()/1000);
  if(u.protocol!=='https:'&&!['localhost','127.0.0.1'].includes(u.hostname))return Response.redirect('https://'+u.host+u.pathname+u.search,308);
- const publicPaths=new Set(['/','/index.html','/login','/login.html','/login.js','/style.css','/landscape.svg','/loading.js','/loading.css','/app.js','/portfolio.js','/cashflow.js','/ai-valuation.js']);
+ const publicPaths=new Set(['/','/index.html','/login','/login.html','/login.js','/style.css','/landscape.svg','/loading.js','/loading.css','/app.js','/portfolio.js','/cashflow.js','/ai-valuation.js','/favicon.ico','/favicon.png','/icon-192.png','/icon-512.png','/apple-touch-icon.png','/logo-arunika.webp','/logo-arunika.png','/site.webmanifest']);
  if(publicPaths.has(p)&&['GET','HEAD'].includes(req.method)){
   return env.ASSETS.fetch(req);
  }

@@ -6,6 +6,7 @@ import vm from 'node:vm';
 import worker from '../src/worker.js';
 import {hashPassword,verifyPassword,digest,credentialVersion} from '../src/auth.js';
 import {valid} from '../src/validate.js';
+const aiScript=readFileSync(new URL('../public/ai-valuation.js',import.meta.url),'utf8');
 const password='test-password-long-2026',hash=hashPassword(password);
 function setup(){
  const db=new DatabaseSync(':memory:');db.exec(readFileSync(new URL('../migrations/0001.sql',import.meta.url),'utf8'));
@@ -39,7 +40,7 @@ test('rumus rumah, emas, kripto, porsi usaha negatif dan dana darurat',()=>{
  const ctx=vm.createContext({Intl,localStorage:{getItem:()=>null},document:{getElementById:()=>({})}});
  const portfolio=readFileSync(new URL('../public/portfolio.js',import.meta.url),'utf8');const app=readFileSync(new URL('../public/app.js',import.meta.url),'utf8');
  const cash=readFileSync(new URL('../public/cashflow.js',import.meta.url),'utf8');
- vm.runInContext(portfolio+'\n'+cash+'\n'+app.slice(0,app.indexOf("$('form').onsubmit")),ctx);
+ vm.runInContext(portfolio+'\n'+cash+'\n'+aiScript+'\n'+app.slice(0,app.indexOf("$('form').onsubmit")),ctx);
  const calc=s=>vm.runInContext(s,ctx);
  assert.equal(calc('value({kind:"house",land:100,building:200})'),300);
  assert.equal(calc('quote={rate:1000};value({kind:"gold",mode:"spot",grams:10,karat:18})'),7500);
@@ -83,7 +84,7 @@ test('rincian kekayaan bersih menghitung bank dan semua kategori, mengurangi uta
  const portfolio=readFileSync(new URL('../public/portfolio.js',import.meta.url),'utf8');
  const app=readFileSync(new URL('../public/app.js',import.meta.url),'utf8');
  const cash=readFileSync(new URL('../public/cashflow.js',import.meta.url),'utf8');
- vm.runInContext(portfolio+'\n'+cash+'\n'+app.slice(0,app.indexOf("$('form').onsubmit")),ctx);
+ vm.runInContext(portfolio+'\n'+cash+'\n'+aiScript+'\n'+app.slice(0,app.indexOf("$('form').onsubmit")),ctx);
  const testState={version:1,assets:[
   {id:'house',kind:'house',name:'Rumah',land:300,building:200},
   {id:'bank1',kind:'bank',name:'Rekening 1',bank:'BCA',accountType:'tabungan',last4:'1234',amount:100},
@@ -106,7 +107,7 @@ test('rincian aset bank menampilkan label yang aman dari HTML tidak tepercaya',(
  const portfolio=readFileSync(new URL('../public/portfolio.js',import.meta.url),'utf8');
  const app=readFileSync(new URL('../public/app.js',import.meta.url),'utf8');
  const cash=readFileSync(new URL('../public/cashflow.js',import.meta.url),'utf8');
- vm.runInContext(portfolio+'\n'+cash+'\n'+app.slice(0,app.indexOf("$('form').onsubmit")),ctx);
+ vm.runInContext(portfolio+'\n'+cash+'\n'+aiScript+'\n'+app.slice(0,app.indexOf("$('form').onsubmit")),ctx);
  ctx.example={version:1,assets:[{id:'evil',kind:'bank',name:'<img src=x onerror=alert(1)>',bank:'BCA & Co',accountType:'tabungan',last4:'',amount:100}],debt:10,monthly:0,months:6};
  vm.runInContext('state=example; renderNetBreakdown(summary())',ctx);
  assert.match(nodes.netDetails.innerHTML,/&lt;img/);
@@ -121,7 +122,7 @@ function contextForValuation(){
  const portfolio=readFileSync(new URL('../public/portfolio.js',import.meta.url),'utf8');
  const app=readFileSync(new URL('../public/app.js',import.meta.url),'utf8');
  const cash=readFileSync(new URL('../public/cashflow.js',import.meta.url),'utf8');
- vm.runInContext(portfolio+'\n'+cash+'\n'+app.slice(0,app.indexOf("$('form').onsubmit")),ctx);
+ vm.runInContext(portfolio+'\n'+cash+'\n'+aiScript+'\n'+app.slice(0,app.indexOf("$('form').onsubmit")),ctx);
  return ctx;
 }
 const phone={id:'hp1',kind:'phone',name:'HP pribadi',purchasePrice:12000000,acquiredAt:'2025-11-16',valuationMode:'auto',direction:'down',annualRate:25};
@@ -186,7 +187,7 @@ test('teks nama perangkat tidak dijalankan sebagai HTML di rincian dan kartu',()
  const portfolio=readFileSync(new URL('../public/portfolio.js',import.meta.url),'utf8');
  const app=readFileSync(new URL('../public/app.js',import.meta.url),'utf8');
  const cash=readFileSync(new URL('../public/cashflow.js',import.meta.url),'utf8');
- vm.runInContext(portfolio+'\n'+cash+'\n'+app.slice(0,app.indexOf("$('form').onsubmit")),ctx);
+ vm.runInContext(portfolio+'\n'+cash+'\n'+aiScript+'\n'+app.slice(0,app.indexOf("$('form').onsubmit")),ctx);
  ctx.sample={version:1,assets:[{...laptop,name:'<svg onload=alert(1)>'}],debt:0,monthly:0,months:6};
  vm.runInContext('state=sample; renderNetBreakdown(summary())',ctx);
  assert.match(nodes.netDetails.innerHTML,/&lt;svg/);
@@ -261,7 +262,7 @@ test('transaksi tidak menampilkan HTML asing dari catatan dan nama rekening',()=
  const portfolio=readFileSync(new URL('../public/portfolio.js',import.meta.url),'utf8');
  const cash=readFileSync(new URL('../public/cashflow.js',import.meta.url),'utf8');
  const app=readFileSync(new URL('../public/app.js',import.meta.url),'utf8');
- vm.runInContext(portfolio+'\n'+cash+'\n'+app.slice(0,app.indexOf("$('form').onsubmit")),ctx);
+ vm.runInContext(portfolio+'\n'+cash+'\n'+aiScript+'\n'+app.slice(0,app.indexOf("$('form').onsubmit")),ctx);
  ctx.sample={...testCashState,assets:[{...bankOne,name:'<img src=x>'},bankTwo],transactions:[{...incomeTx,note:'<svg onload=alert(1)>'}]};
  vm.runInContext('state=sample;cashArchiveDay="2026-11-15";renderCashflow()',ctx);
  assert.match(nodes.cashBalances.innerHTML,/&lt;img/);
@@ -300,7 +301,7 @@ test('arsip kalender menampilkan satu tanggal, batasi 15 baris dan saldo utuh',(
  const portfolio=readFileSync(new URL('../public/portfolio.js',import.meta.url),'utf8');
  const cash=readFileSync(new URL('../public/cashflow.js',import.meta.url),'utf8');
  const app=readFileSync(new URL('../public/app.js',import.meta.url),'utf8');
- vm.runInContext(portfolio+'\n'+cash+'\n'+app.slice(0,app.indexOf("$('form').onsubmit")),ctx);
+ vm.runInContext(portfolio+'\n'+cash+'\n'+aiScript+'\n'+app.slice(0,app.indexOf("$('form').onsubmit")),ctx);
  const entries=Array.from({length:35},(_,i)=>({...incomeTx,id:'series-'+i,date:'2026-11-08',amount:1000,note:'Hari sibuk '+i}));
  ctx.sample={...testCashState,transactions:[...entries,expenseTx,{...incomeTx,id:'other-day',date:'2026-11-04'}]};
  vm.runInContext('state=sample;cashArchiveDay="2026-11-08";renderCashArchive()',ctx);
@@ -324,4 +325,77 @@ test('pembaruan arsip tidak memerlukan migrasi D1, pemulihan backup membawa kemb
  assert.match(html,/id="cashCalendar"/);assert.match(html,/id="cashArchiveMonth"/);
  assert.match(js,/transactions:transactionsOf\(d\)/);
  assert.doesNotMatch(js,/commit\(\{version,assets,debt,monthly,months\}\)/);
+});
+
+// V8: Nilai AI hanyalah opsi; tidak mengganti saldo/portofolio tanpa izin pemilik.
+test('input estimasi AI dibatasi dan tanpa URL yang bisa menyisipkan autentikasi',async()=>{
+ const {assessInput}=await import('../src/valuation-ai.js');
+ const ok={assetId:'hp',condition:'good',comparables:[4500000,5000000],sourceUrl:'https://contoh.id/jual/123',note:'muluss'};
+ assert(assessInput(ok));
+ assert.equal(assessInput({...ok,comparables:[-1]}),null);
+ assert.equal(assessInput({...ok,comparables:[1.5]}),null);
+ assert.equal(assessInput({...ok,sourceUrl:'http://example.test'}),null);
+ assert.equal(assessInput({...ok,sourceUrl:'https://user:pw@host.tld/'}),null);
+ assert.equal(assessInput({...ok,condition:'fake'}),null);
+});
+
+test('saran AI: jumlah final dihitung deterministik, bukan angka halusinasi model',async()=>{
+ const {estimateAI,baseline,assetSignature}=await import('../src/valuation-ai.js');
+ const a={kind:'phone',name:'HP Contoh',id:'hp',acquiredAt:'2025-11-16',valuationMode:'auto',direction:'down',annualRate:20,purchasePrice:10000000};
+ let seen;
+ const env={AI:{run:async(model,input)=>{seen=JSON.stringify(input);return {response:JSON.stringify({adjustment:1.0,explanation:'Kondisi baik, pembanding dari pengguna belum diverifikasi.'})}}}};
+ const result=await estimateAI(env,a,{assetId:'hp',condition:'good',comparables:[3500000,4500000,5000000],sourceUrl:'https://example.test',note:'Garansi habis'},new Date('2026-11-16T00:00:00Z'));
+ assert(Math.abs(baseline(a,'2026-11-16')-8000000)<2000);
+ assert.equal(result.amount,Math.round(baseline(a,'2026-11-16')*.35+4500000*.65));
+ assert.equal(result.signature,assetSignature(a));
+ assert.equal(result.confidence,'sedang');
+ assert.match(seen,/HargaPembanding|hargaPembanding/i);
+ assert(!seen.includes('bankAccount'));
+ assert(result.lower<result.amount&&result.upper>result.amount);
+ await assert.rejects(estimateAI({AI:{run:async()=>({response:'{"adjustment":50,"explanation":"bohong"}'})}},a,{assetId:'hp',condition:'good',comparables:[],sourceUrl:'',note:''},new Date()),/Layanan AI/);
+});
+
+test('nilai pribadi dan AI terpisah, validasi snapshot dan aset lama tetap valid',async()=>{
+ const {assetSignature}=await import('../src/valuation-ai.js');
+ const phone={id:'hp',kind:'phone',name:'HP',purchasePrice:10000000,acquiredAt:'2025-11-16',valuationMode:'auto',direction:'down',annualRate:20};
+ const ai={amount:6000000,lower:5000000,upper:7000000,baseline:8000000,asOf:'2026-11-16T10:00:00Z',model:'@cf/meta/llama-3.1-8b-instruct',confidence:'rendah',sourceType:'model-tanpa-data-pasar',reason:'Perkiraan berdasarkan umur dan kondisi',comparablesUsed:0,comparablePrices:[],sourceUrl:'',condition:'good',signature:assetSignature(phone)};
+ assert(valid({...state,assets:[...state.assets,{...phone,ownerValue:9000000,aiValuation:ai,valuationSource:'projection'}]}));
+ assert(valid({...state,assets:[phone]}),'aset versi lama tetap diterima');
+ assert(valid({...state,assets:[{...phone,ownerValue:9000000,aiValuation:ai,valuationSource:'ai'}]}));
+ assert(!valid({...state,assets:[{...phone,ownerValue:9000000,aiValuation:ai,valuationSource:'nonsense'}]}));
+ assert(!valid({...state,assets:[{...phone,aiValuation:{...ai,amount:8000000},valuationSource:'ai'}]}),'hasil di luar rentang ditolak');
+ assert(!valid({...state,assets:[{...phone,annualRate:10,aiValuation:ai,valuationSource:'ai'}]}),'saran AI usang tidak diterima');
+ const ctx=vm.createContext({Intl,localStorage:{getItem:()=>null},document:{getElementById:()=>({})}});
+ const portfolio=readFileSync(new URL('../public/portfolio.js',import.meta.url),'utf8');
+ const cash=readFileSync(new URL('../public/cashflow.js',import.meta.url),'utf8');
+ const app=readFileSync(new URL('../public/app.js',import.meta.url),'utf8');
+ vm.runInContext(portfolio+'\n'+cash+'\n'+aiScript+'\n'+app.slice(0,app.indexOf("$('form').onsubmit")),ctx);
+ ctx.example={...state,assets:[phone]};
+ assert(Math.abs(vm.runInContext('state=example;value(state.assets[0])',ctx)-8000000)<2000);
+ ctx.example.assets[0]={...phone,ownerValue:9000000,aiValuation:ai,valuationSource:'user'};
+ assert.equal(vm.runInContext('state=example;value(state.assets[0])',ctx),9000000);
+ ctx.example.assets[0]={...phone,ownerValue:9000000,aiValuation:ai,valuationSource:'ai'};
+ assert.equal(vm.runInContext('state=example;value(state.assets[0])',ctx),6000000);
+});
+
+test('endpoint estimasi AI wajib sesi, binding, Origin; tidak mengubah D1 tanpa komit',async()=>{
+ const {req,db,env}=setup();
+ const phone={id:'phone1',kind:'phone',name:'HP',purchasePrice:10000000,acquiredAt:'2025-11-16',valuationMode:'auto',direction:'down',annualRate:20};
+ const next={...state,assets:[...state.assets,phone]};
+ const input={assetId:'phone1',condition:'good',comparables:[],sourceUrl:'',note:''};
+ assert.equal((await req('/api/ai/estimate','POST',input)).status,401);
+ const login=await req('/api/login','POST',{username:'owner',password});const cookie=login.headers.get('set-cookie');
+ assert.equal((await req('/api/portfolio','PUT',{state:next,revision:0},cookie)).status,200);
+ assert.equal((await req('/api/ai/estimate','POST',input,cookie,'https://attacker.test')).status,403);
+ const missing=await req('/api/ai/estimate','POST',input,cookie);
+ assert.equal(missing.status,503);assert.match((await missing.json()).error,/Binding Workers AI/);
+ let sent='';env.AI={run:async(model,options)=>{sent=JSON.stringify(options);return {response:'{"adjustment":0.96,"explanation":"Perkiraan penyusutan berbasis kondisi dan usia aset."}'}}};
+ const adviceRes=await req('/api/ai/estimate','POST',input,cookie);assert.equal(adviceRes.status,200);
+ const {advice}=await adviceRes.json();assert(advice.amount>0);assert.equal(advice.sourceType,'model-tanpa-data-pasar');
+ assert(!sent.includes('AUTH_PASSWORD_HASH'));assert(!sent.includes('scrypt$'));
+ const saved=await (await req('/api/portfolio','GET',undefined,cookie)).json();
+ assert.deepEqual(saved.state,next,'saran AI tidak mengubah portofolio');
+ const changed={...next,assets:next.assets.map(a=>a.id==='phone1'?{...a,aiValuation:advice,valuationSource:'ai'}:a)};
+ assert.equal((await req('/api/portfolio','PUT',{state:changed,revision:1},cookie)).status,200);
+ assert.equal(db.prepare('SELECT revision FROM portfolio WHERE id=1').get().revision,2);
 });

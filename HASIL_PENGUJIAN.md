@@ -1,25 +1,24 @@
-# Hasil pemeriksaan — 16 November 2026
+# Hasil pemeriksaan v4 — 16 November 2026
 
-## Lulus
+## Temuan dari rekaman dan ZIP
 
-- 7 kelompok pengujian otomatis (`npm test`, Node.js 24): hash password; validasi angka dan ID; penolakan API tanpa sesi dan CSRF; login/save/konflik/logout; kedaluwarsa dan pencabutan sesi akibat pergantian credential; rate limit; header dan ukuran permintaan; rumus rumah/emas/kripto/usaha/dana darurat.
-- Pengujian SQL memakai SQLite dalam memori melalui adapter D1: kueri parameter dan pemeriksaan revisi atomik dijalankan, bukan hanya mock hasil tetap.
-- Migrasi D1 lokal berhasil.
-- Bundling Cloudflare `wrangler deploy --dry-run` berhasil dengan Wrangler 4.162.0. Tidak menerbitkan aplikasi.
+- Proyek pada video adalah Cloudflare Pages; build `npm ci`, build output kosong. ZIP v3 adalah Worker dengan frontend dalam public/. Tidak terdapat build Pages atau _worker.js dalam outputnya. Ini ketidakcocokan deployment yang diperbaiki pada v4.
+- AUTH_PASSWORD_HASH pada video diisi nilai yang tidak berbentuk hash scrypt, dengan tipe Text. Nilainya tidak disalin ke paket. Panduan meminta password baru dan penggantian menjadi Secret berisi hash yang benar.
+- Awal video menampilkan “Pratinjau tidak tersedia” untuk ZIP di ChatGPT Library. Itu bukan tampilan aplikasi pada domain produksi. Rekaman tidak memberikan log error server, sehingga penyebab respons pada situs produksi belum dapat dipastikan seluruhnya.
+- Binding D1 dan isi tabel tidak dapat dipastikan dari rekaman; panduan memuat langkah verifikasinya.
+
+## Pengujian lulus
+
+- 10 kelompok pengujian otomatis Node.js + SQLite: hash, validasi aset, proteksi API, CSRF, simpan/revisi, sesi/logout/rotasi credential, rate limit, header/batas body, rumus aset, konfigurasi hilang, hash salah, schema hilang.
+- Build `npm run build` menghasilkan dist/_worker.js, dist/_routes.json dan seluruh aset frontend. Semua route melewati Function; data portofolio hanya disajikan dengan sesi sah.
+- Pemeriksaan sintaks JavaScript frontend dan backend.
+- Simulasi DOM frontend: portofolio berhasil dimuat dan loading ditutup; respons HTML dari deployment tanpa backend memberi pesan; konfigurasi hash salah memberi pesan dan tombol Coba lagi. Ketiga skenario tanpa error JavaScript tak tertangani.
 
 ## Batas verifikasi
 
-- Belum deploy ke akun pengguna; belum menguji D1 remote, custom domain, kuota/CPU produksi, beban serentak, atau layanan harga pasar langsung pada deployment pengguna.
-- Pengujian browser/visual otomatis tidak selesai: Chromium tidak dapat berjalan karena pembatasan socket pada lingkungan pengerjaan. Tidak mengklaim telah lulus uji UI end-to-end.
-- Ini pengujian fungsional dan kontrol keamanan terpilih, bukan audit penetrasi atau sertifikasi keamanan.
+- Pengujian DOM memakai respons API simulasi; bukan uji browser dan Cloudflare end-to-end.
+- Belum deploy atau mengubah pengaturan akun Cloudflare pengguna. Belum menguji hash terhadap batas CPU paket produksi, D1 remote, domain, atau harga pasar langsung pada deployment itu.
+- Animasi/CSS belum diverifikasi visual pada browser desktop dan ponsel. Lingkungan sebelumnya memblokir peluncuran Chromium. CSS menyediakan reduced-motion dan layout responsif.
+- Tidak ada klaim audit penetrasi, bebas bug, atau keamanan mutlak.
 
-## Pemeriksaan setelah deploy
-
-1. Halaman utama tanpa login harus mengarah ke login; API portofolio harus 401.
-2. Masuk dengan credential Anda; password salah harus ditolak.
-3. Tambah aset masing-masing kategori, ubah, hapus, lalu muat ulang dan buka pada perangkat lain.
-4. Buka dua tab, simpan di tab pertama, lalu simpan di tab kedua. Tab kedua harus menampilkan konflik dan tidak menimpa perubahan pertama.
-5. Ekspor lalu impor cadangan uji; pastikan ada konfirmasi dan semua angka pulih.
-6. Uji harga/kurs gagal: nilai belum tersedia tidak boleh dianggap harga nol yang pasti; gunakan mode manual.
-7. Keluar: API kembali 401. Ganti secret password: sesi lama juga harus ditolak.
-8. Periksa tampilan desktop dan ponsel, keyboard, tombol mata password, serta proses simpan lambat/gagal sebelum memasukkan seluruh data asli.
+Ikuti bagian G PANDUAN_DEPLOY.md untuk verifikasi produksi setelah semua pengaturan dan kode diperbarui.

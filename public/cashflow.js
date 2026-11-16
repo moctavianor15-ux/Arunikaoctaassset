@@ -56,7 +56,49 @@ function cashRange(mode,reference,start,end){
  }
  return {start:day,end:day,label:'Harian · '+day};
 }
-let cashPage=1;let cashFiltered=[];
+let cashFiltered=[];
+// Arsip hanya mengatur tampilan. Saldo rekening tetap menghitung SEMUA transaksi.
+let cashArchiveDay='',cashDayVisible=15;
+function cashArchiveMonthKey(){return $('cashArchiveMonth').value||localDay().slice(0,7)}
+function cashArchiveForMonth(month,source=transactionsOf(state),kind=$('cashTypeFilter').value,bank=$('cashBankFilter').value){
+ return source.filter(t=>t.date.slice(0,7)===month&&(!kind||t.type===kind)&&(!bank||t.accountId===bank||t.toAccountId===bank))
+  .map((t,i)=>({t,i})).sort((a,b)=>b.t.date.localeCompare(a.t.date)||b.i-a.i).map(x=>x.t);
+}
+function cashTotals(rows){return rows.reduce((acc,t)=>{acc.count++;acc[t.type]+=t.amount;return acc},{count:0,income:0,expense:0,transfer:0})}
+function cashMonthShift(month,diff){const [year,m]=month.split('-').map(Number);const date=new Date(year,m-1+diff,1,12);return localDay(date).slice(0,7)}
+function cashFullDay(day){return new Intl.DateTimeFormat('id-ID',{weekday:'long',day:'numeric',month:'long',year:'numeric'}).format(new Date(day+'T12:00:00'))}
+function cashTransactionRow(t){
+ const income=t.type==='income',transfer=t.type==='transfer',source=cashAccountName(t.accountId),destination=transfer?cashAccountName(t.toAccountId):'';
+ return '<div class="cashRow"><div class="cashRowText"><b><span class="cashTypeTag '+t.type+'">'+cashTypeLabels[t.type]+'</span>'+esc(t.note||cashCategoryName(t))+'</b><small>'+esc(cashCategoryName(t))+'</small><small>'+esc(transfer?source+' → '+destination:source)+'</small></div><span class="cashRowAmount '+(income?'cashPositive':transfer?'':'cashNegative')+'">'+(income?'+ ':transfer?'⇄ ':'− ')+money(t.amount)+'</span><button data-cash-id="'+esc(t.id)+'" type="button" aria-label="Ubah transaksi '+esc(t.date)+'">Ubah</button></div>';
+}
+function renderCashArchive(){
+ const maxMonth=localDay().slice(0,7);const monthInput=$('cashArchiveMonth');let month=monthInput.value||maxMonth;
+ if(!/^\d{4}-(0[1-9]|1[0-2])$/.test(month)||month<'1900-01'||month>maxMonth)month=maxMonth;
+ monthInput.value=month;monthInput.max=maxMonth;
+ $('cashPrevMonth').disabled=month<='1900-01';$('cashNextMonth').disabled=month>=maxMonth;$('cashThisMonth').disabled=month===maxMonth;
+ const rows=cashArchiveForMonth(month),totals=cashTotals(rows),byDay=new Map();
+ for(const t of rows){const arr=byDay.get(t.date)||[];arr.push(t);byDay.set(t.date,arr)}
+ $('cashArchiveCount').textContent=totals.count+' transaksi dalam bulan ini';$('cashArchiveCsv').disabled=!totals.count;
+ $('cashArchiveStats').innerHTML='<div><small>MASUK BULAN INI</small><strong class="cashPositive">'+money(totals.income)+'</strong></div><div><small>KELUAR BULAN INI</small><strong class="cashNegative">'+money(totals.expense)+'</strong></div><div><small>SELISIH BULAN INI</small><strong class="'+cashMoneyClass(totals.income-totals.expense)+'">'+(totals.income<totals.expense?'− ':'')+money(Math.abs(totals.income-totals.expense))+'</strong></div>';
+ const [year,m]=month.split('-').map(Number),maxDay=new Date(year,m,0).getDate();
+ const maxAllowed=month===maxMonth?Number(localDay().slice(8)):maxDay;
+ if(!cashArchiveDay.startsWith(month)||Number(cashArchiveDay.slice(-2))>maxAllowed){cashArchiveDay=rows[0]?.date||month+'-'+String(maxAllowed).padStart(2,'0');cashDayVisible=15}
+ const offset=(new Date(year,m-1,1,12).getDay()+6)%7;
+ let cells=Array.from({length:offset},()=>'<span class="cashBlankDay" aria-hidden="true"></span>');
+ for(let day=1;day<=maxDay;day++){
+  const date=month+'-'+String(day).padStart(2,'0'),items=byDay.get(date)||[],tot=cashTotals(items),future=day>maxAllowed;
+  const dots=['income','expense','transfer'].filter(kind=>tot[kind]>0).map(kind=>'<i class="cashDot '+kind+'"></i>').join('');
+  const description=items.length+' transaksi';
+  cells.push('<button type="button" class="cashDate'+(items.length?' hasActivity':'')+(date===cashArchiveDay?' isSelected':'')+'" data-cash-day="'+date+'" aria-label="'+esc(cashFullDay(date))+' · '+description+'" aria-pressed="'+(date===cashArchiveDay)+'" '+(future?'disabled':'')+'><span>'+day+'</span><small>'+ (items.length?items.length+' catatan':'')+'</small><span class="cashDateDots">'+dots+'</span></button>');
+ }
+ $('cashCalendar').innerHTML=cells.join('');
+ const selected=byDay.get(cashArchiveDay)||[],dayTotals=cashTotals(selected);
+ $('cashDayTitle').innerHTML='<div><small>RINCIAN HARIAN</small><h4>'+esc(cashFullDay(cashArchiveDay))+'</h4><p class="hint">'+selected.length+' transaksi tercatat</p></div>';
+ $('cashDaySummary').innerHTML='<span class="cashPositive">Masuk: <b>'+money(dayTotals.income)+'</b></span><span class="cashNegative">Keluar: <b>'+money(dayTotals.expense)+'</b></span>'+(dayTotals.transfer?'<span>Transfer: <b>'+money(dayTotals.transfer)+'</b></span>':'');
+ $('cashList').innerHTML=selected.length?selected.slice(0,cashDayVisible).map(cashTransactionRow).join(''):'<p class="cashEmpty">Belum ada transaksi pada tanggal ini. Pilih hari yang bertanda catatan atau gunakan tombol Uang masuk / Uang keluar.</p>';
+ $('cashMore').hidden=selected.length<=cashDayVisible;
+}
+
 function cashFilterRange(){return cashRange($('cashPeriod').value,$('cashReference').value,$('cashStart').value,$('cashEnd').value)}
 function cashFilteredRows(){
  const {start,end}=cashFilterRange(),type=$('cashTypeFilter').value,bank=$('cashBankFilter').value;
@@ -81,15 +123,9 @@ function renderCashflow(){
  const transfer=cashFiltered.reduce((s,t)=>s+(t.type==='transfer'?t.amount:0),0);
  const net=income-expense;
  $('cashIncome').textContent=money(income);$('cashExpense').textContent=money(expense);$('cashNet').textContent=(net<0?'− ':'')+money(Math.abs(net));$('cashNet').className=cashMoneyClass(net);$('cashTransfer').textContent=money(transfer);
- $('cashCount').textContent=invalid?'Rentang tanggal tidak valid':cashFiltered.length+' transaksi';
  $('cashCsv').disabled=!cashFiltered.length;
  for(const id of ['cashIncomeAdd','cashExpenseAdd','cashTransferAdd'])$(id).disabled=!banks.length||(id==='cashTransferAdd'&&banks.length<2);
- const visible=cashFiltered.slice(0,cashPage*60);
- $('cashList').innerHTML=invalid?'<p class="cashEmpty cashError">Tanggal mulai tidak boleh lebih besar daripada tanggal akhir.</p>':visible.length?visible.map(t=>{
-  const isIncome=t.type==='income',transfer=t.type==='transfer';const source=cashAccountName(t.accountId);const destination=transfer?cashAccountName(t.toAccountId):'';
-  return '<div class="cashRow"><div class="cashRowText"><b><span class="cashTypeTag '+t.type+'">'+cashTypeLabels[t.type]+'</span>'+esc(t.note||cashCategoryName(t))+'</b><small>'+esc(t.date)+' · '+esc(cashCategoryName(t))+'</small><small>'+esc(transfer?source+' → '+destination:source)+'</small></div><span class="cashRowAmount '+(isIncome?'cashPositive':transfer?'':'cashNegative')+'">'+(isIncome?'+ ':transfer?'⇄ ':'− ')+money(t.amount)+'</span><button data-cash-id="'+esc(t.id)+'" type="button" aria-label="Ubah transaksi '+esc(t.date)+'">Ubah</button></div>';
- }).join(''):'<p class="cashEmpty">Belum ada transaksi pada periode ini. Klik Uang masuk atau Uang keluar untuk mencatat transaksi pertama.</p>';
- $('cashMore').hidden=cashFiltered.length<=visible.length;
+ renderCashArchive();
 }
 function cashCategoryName(t){return (cashCategories[t.type]||[]).find(([k])=>k===t.category)?.[1]||t.category}
 function cashTypeOptions(selected){return ['income','expense','transfer'].map(k=>'<option value="'+k+'" '+(k===selected?'selected':'')+'>'+cashTypeLabels[k]+'</option>').join('')}
@@ -110,7 +146,9 @@ function cashTransactionForm(current=null,type='income'){
   if(newType==='transfer')item.toAccountId=form.get('toAccountId');
   const tx=transactionsOf(state);const next={...state,transactions:current?tx.map(old=>old.id===current.id?item:old):[...tx,item]};
   if(!valid(next))throw Error('Periksa nominal, tanggal, rekening tujuan, atau saldo rekening. Saldo akhir tidak boleh negatif.');
-  await commit(next);cashPage=1;
+  const previousMonth=$('cashArchiveMonth').value,previousDay=cashArchiveDay;
+  $('cashArchiveMonth').value=item.date.slice(0,7);cashArchiveDay=item.date;cashDayVisible=15;
+  try{await commit(next)}catch(error){$('cashArchiveMonth').value=previousMonth;cashArchiveDay=previousDay;throw error}
  },current?'Simpan perubahan':'Simpan transaksi');
  const kindSelect=$('cashEntryType');
  function dynamic(){
@@ -126,21 +164,29 @@ function cashTransactionForm(current=null,type='income'){
  if(current)$('cashDelete').onclick=()=>modal('Hapus transaksi?', '<p>Transaksi tanggal '+esc(current.date)+' senilai '+money(current.amount)+' akan dihapus. Saldo bank akan dihitung kembali secara otomatis.</p>',async()=>{
   const next={...state,transactions:transactionsOf(state).filter(t=>t.id!==current.id)};
   if(!valid(next))throw Error('Penghapusan membuat saldo akhir rekening negatif. Periksa transaksi lain atau saldo dasar.');
-  await commit(next);cashPage=1;
+  await commit(next);cashDayVisible=15;
  },'Ya, hapus transaksi');
 }
-function exportCashCSV(){
+function exportCashCSV(archive=false){
  const headers=['Tanggal','Jenis','Kategori','Nominal (Rp)','Rekening asal / terkait','Rekening tujuan','Catatan'];
- const rows=cashFiltered.map(t=>[t.date,cashTypeLabels[t.type],cashCategoryName(t),t.amount,cashAccountName(t.accountId),t.type==='transfer'?cashAccountName(t.toAccountId):'',t.note]);
+ const items=archive?cashArchiveForMonth(cashArchiveMonthKey()):cashFiltered;
+ const rows=items.map(t=>[t.date,cashTypeLabels[t.type],cashCategoryName(t),t.amount,cashAccountName(t.accountId),t.type==='transfer'?cashAccountName(t.toAccountId):'',t.note]);
  // Awalan berbahaya pada CSV dibersihkan untuk mencegah formula injection di Excel.
  const cell=v=>{let x=String(v??'');if(/^[\s\t\r\n]*[=+@-]/.test(x))x="'"+x;return '"'+x.replace(/"/g,'""')+'"'};
  const body='\uFEFF'+[headers,...rows].map(r=>r.map(cell).join(',')).join('\r\n');
- const u=URL.createObjectURL(new Blob([body],{type:'text/csv;charset=utf-8'}));const link=document.createElement('a');link.href=u;link.download='Arunika-Buku-Kas-'+localDay()+'.csv';link.click();setTimeout(()=>URL.revokeObjectURL(u),2000);
+ const u=URL.createObjectURL(new Blob([body],{type:'text/csv;charset=utf-8'}));const link=document.createElement('a');link.href=u;link.download=(archive?'Arunika-Arsip-'+cashArchiveMonthKey():'Arunika-Buku-Kas-Periode-'+localDay())+'.csv';link.click();setTimeout(()=>URL.revokeObjectURL(u),2000);
 }
 function setupCashflow(){
  const date=localDay();for(const id of ['cashReference','cashStart','cashEnd']){$(id).value=date;$(id).max=date}
- for(const id of ['cashPeriod','cashReference','cashStart','cashEnd','cashTypeFilter','cashBankFilter'])$(id).addEventListener('change',()=>{cashPage=1;renderCashflow()});
+ $('cashArchiveMonth').value=date.slice(0,7);$('cashArchiveMonth').max=date.slice(0,7);
+ for(const id of ['cashPeriod','cashReference','cashStart','cashEnd','cashTypeFilter','cashBankFilter'])$(id).addEventListener('change',renderCashflow);
  $('cashIncomeAdd').onclick=()=>cashTransactionForm(null,'income');$('cashExpenseAdd').onclick=()=>cashTransactionForm(null,'expense');$('cashTransferAdd').onclick=()=>cashTransactionForm(null,'transfer');
- $('cashMore').onclick=()=>{cashPage++;renderCashflow()};$('cashCsv').onclick=exportCashCSV;
+ $('cashArchiveMonth').addEventListener('change',()=>{cashArchiveDay='';cashDayVisible=15;renderCashArchive()});
+ $('cashPrevMonth').onclick=()=>{$('cashArchiveMonth').value=cashMonthShift(cashArchiveMonthKey(),-1);cashArchiveDay='';cashDayVisible=15;renderCashArchive()};
+ $('cashNextMonth').onclick=()=>{$('cashArchiveMonth').value=cashMonthShift(cashArchiveMonthKey(),1);cashArchiveDay='';cashDayVisible=15;renderCashArchive()};
+ $('cashThisMonth').onclick=()=>{$('cashArchiveMonth').value=localDay().slice(0,7);cashArchiveDay='';cashDayVisible=15;renderCashArchive()};
+ $('cashCalendar').onclick=e=>{const button=e.target.closest('button[data-cash-day]');if(!button||button.disabled)return;cashArchiveDay=button.dataset.cashDay;cashDayVisible=15;renderCashArchive()};
+ $('cashMore').onclick=()=>{cashDayVisible+=15;renderCashArchive()};
+ $('cashCsv').onclick=()=>exportCashCSV(false);$('cashArchiveCsv').onclick=()=>exportCashCSV(true);
  $('cashList').onclick=e=>{const button=e.target.closest('button[data-cash-id]');if(!button)return;const tx=transactionsOf(state).find(t=>t.id===button.dataset.cashId);if(tx)cashTransactionForm(tx)};
 }

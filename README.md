@@ -1,24 +1,9 @@
-# Arunika v4 — Pages + backend + loading
+# Arunika — perbaikan konfigurasi binding Pages
 
-**Mulai dari PANDUAN_DEPLOY.md.** Paket v4 menyesuaikan proyek Cloudflare Pages yang sudah dibuat. Login, D1 dan perhitungan tetap tersedia.
+Baca **PERBAIKAN_BINDING.md** untuk langkah utama. File wrangler.jsonc sudah menjadi konfigurasi Pages yang menunjuk database D1 Anda.
 
-Pengaturan Pages:
-- Framework: None
-- Build command: `npm run build`
-- Build output directory: `dist`
-- Root directory: kosong jika package.json di root
-- Runtime: compatibility date 2026-11-01, nodejs_compat
-- Binding D1: DB; jalankan migrations/0001.sql
-- Secrets: AUTH_USERNAME dan AUTH_PASSWORD_HASH (hasil `npm run password`, bukan password asli)
+Ganti wrangler.jsonc di root GitHub, commit baru ke main, dan jalankan migrations/0001.sql melalui Console D1. Build tetap npm run build, output dist. Tidak perlu mengganti frontend atau membuat database baru.
 
-**Hapus wrangler.jsonc v3 dari repository.** Konfigurasi alternatif Workers sekarang bernama wrangler.worker.jsonc.
+Binding DB dipasang melalui konfigurasi repository pada deployment baru. Secrets tetap di Cloudflare. Jangan hapus wrangler.jsonc yang telah diperbaiki ini.
 
-```sh
-npm ci
-npm test
-npm run build
-```
-
-`dist/_worker.js` adalah backend Pages; jangan mengunggah hanya public/ atau menetapkan output kosong. Unggah isi ZIP ke repository GitHub, bukan ZIP sebagai satu file. Deploy ulang sesudah mengganti binding/Secrets.
-
-Tidak ada credential produksi/default dalam paket. Lihat HASIL_PENGUJIAN.md untuk batas verifikasi.
+Pengujian: npm test; build: npm run build. Backend dan rumus aset tidak diubah. Belum dideploy ke akun Anda oleh asisten.

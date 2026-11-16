@@ -1,3 +1,5 @@
+> PEMBARUAN: Ikuti PERBAIKAN_BINDING.md terlebih dahulu. wrangler.jsonc dalam paket ini SUDAH diganti menjadi konfigurasi Pages dengan ID D1 Anda. Arahan di bawah untuk menghapus wrangler.jsonc dan mengatur binding hanya melalui dashboard tidak berlaku untuk paket perbaikan ini.
+
 # Arunika v4 — perbaikan Pages dan loading
 
 Paket ini sekarang mendukung proyek **Cloudflare Pages** yang terlihat di rekaman Anda, melalui Pages Functions Advanced Mode. Paket v3 sebelumnya khusus Workers; memasangnya sebagai Pages dengan build `npm ci` dan output kosong tidak membangun backend.
@@ -5,7 +7,7 @@ Paket ini sekarang mendukung proyek **Cloudflare Pages** yang terlihat di rekama
 ## A. Perbaiki isi GitHub terlebih dahulu
 
 1. Ekstrak ZIP v4, unggah ISINYA ke root repository yang terhubung dengan proyek Pages. `package.json`, `scripts/`, `src/`, `public/`, dan `migrations/` harus berada sejajar.
-2. **Hapus file lama `wrangler.jsonc` dari repository.** Paket v4 menggunakan `wrangler.worker.jsonc` hanya untuk alternatif Workers; Pages memakai pengaturan dashboard. Jangan menyisakan `wrangler.toml` atau `wrangler.json` lama yang menunjuk konfigurasi lain.
+2. **Ganti wrangler.jsonc lama dengan file perbaikan dalam paket ini.** File baru adalah konfigurasi Pages dengan ID database Anda. Pertahankan file baru tersebut. Jangan menyisakan wrangler.toml atau wrangler.json yang berbeda.
 3. Pastikan `package-lock.json` juga diganti dengan versi v4. Jangan hanya mengunggah ZIP atau folder `public` saja.
 4. Jangan unggah `.dev.vars`, `password-hash.txt`, `.env`, `node_modules`, atau backup berisi data pribadi. `.gitignore` telah disediakan.
 
@@ -33,10 +35,8 @@ Hash scrypt membutuhkan CPU lebih besar dibanding situs statis. Gunakan paket Wo
 
 1. Di Cloudflare, buka Storage & databases → D1 SQL Database → Create database, beri nama `arunika-private`. Jika database sudah ada dan berisi data, **gunakan database itu**.
 2. Buka database → Console. Salin seluruh isi `migrations/0001.sql`, lalu jalankan. Skrip membuat tabel dan satu portofolio kosong bila belum ada; tidak menghapus portofolio yang sudah ada.
-3. Kembali ke proyek Pages → Settings → Bindings → Add → D1 Database.
-4. **Variable / binding name: `DB`** (huruf besar). Database: pilih database langkah 1. Simpan untuk Production.
+3. Binding DB sekarang ditetapkan pada wrangler.jsonc, menggunakan database yang terlihat dalam rekaman. Commit file perbaikan tersebut ke main, lalu tunggu deployment baru. Pengaturan binding berasal dari file ini. Preview tidak diberi akses D1 produksi.
 
-Perintah CLI alternatif menggunakan konfigurasi Workers memerlukan ID D1 yang benar pada `wrangler.worker.jsonc`. Untuk alur dashboard Pages di panduan ini, tidak perlu mengedit ID tersebut; binding ditetapkan melalui dashboard.
 
 ## E. Perbaiki Secrets
 

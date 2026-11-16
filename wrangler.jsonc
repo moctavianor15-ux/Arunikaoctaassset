@@ -3,14 +3,23 @@
   "name": "arunikaoctaasssetpribadi",
   "pages_build_output_dir": "./dist",
   "compatibility_date": "2026-11-01",
-  "compatibility_flags": ["nodejs_compat"],
-  "d1_databases": [{
-    "binding": "DB",
-    "database_name": "arunika-private",
-    "database_id": "2c0259fe-5b04-4bb6-a511-206a5b534809",
-    "migrations_dir": "migrations"
-  }],
+  "compatibility_flags": [
+    "nodejs_compat"
+  ],
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "arunika-private",
+      "database_id": "2c0259fe-5b04-4bb6-a511-206a5b534809",
+      "migrations_dir": "migrations"
+    }
+  ],
   "env": {
-    "preview": { "d1_databases": [] }
+    "preview": {
+      "d1_databases": []
+    }
+  },
+  "ai": {
+    "binding": "AI"
   }
 }

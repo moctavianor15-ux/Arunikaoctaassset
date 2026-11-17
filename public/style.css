@@ -110,3 +110,25 @@
 .balancesHidden :is(#net,#total,#owed,.holdings h2){font-size:0;line-height:1.4;letter-spacing:0}
 .balancesHidden :is(#net,#total,#owed,.holdings h2)::before{content:"••••••";font-size:20px;letter-spacing:.12em}
 .balancesHidden #net::before{font-size:clamp(34px,5vw,56px)}
+
+.holdings .usdtLine{display:flex;align-items:baseline;justify-content:space-between;gap:10px;flex-wrap:wrap;padding:9px 12px;border-radius:10px;background:#e4f3ee;color:#245749}
+.balancesHidden .holdings .usdtLine{display:none}
+.coinBreakdown{margin:14px 0;border-block:1px solid #dee8e4;padding:10px 0;font-size:14px}
+.coinBreakdown summary{cursor:pointer;font-weight:650;color:#245749}
+.coinBreakdown dl{margin:8px 0 0}
+.coinBreakdown dl div{display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;padding:5px 0}
+.coinBreakdown dt{font-weight:650}.coinBreakdown dd{margin:0;overflow-wrap:anywhere}
+
+.cashInsights{margin:22px 0;padding-top:18px;border-top:1px solid #dee6df}
+.cashInsights h3,.insightHead h4{margin:0}
+.cashInsightGrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,240px),1fr));gap:12px}
+.cashInsight{padding:16px;border:1px solid #dce5df;border-radius:14px;background:#fff}
+.insightHead,.cashInsight dl>div{display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap}
+.cashSignal{display:inline-flex;align-items:center;gap:5px;border-radius:16px;padding:4px 9px;font-size:12px;font-weight:700}
+.cashSignal svg{width:16px;height:16px}
+.cashSignal.positive{color:#185c40;background:#e6f4eb}.cashSignal.negative{color:#8d362a;background:#fbece8}.cashSignal.neutral{color:#465653;background:#eef2ee}
+.insightDates,.insightAverage,.cashInsight dd small{font-size:12px;color:#4a6059}
+.cashInsight dl{margin:14px 0 8px}.cashInsight dd{margin:0;font-weight:650}.cashInsight dd small{font-weight:500}
+.cashInsight p{margin:10px 0;font-size:14px}.cashShareBar{height:6px;border-radius:8px;background:#eef2ee;display:flex;overflow:hidden}
+.cashShareBar i{background:#40805d}.cashShareBar b{background:#bf715c}
+.insightAverage{border-top:1px solid #e1e9e5;padding-top:8px}

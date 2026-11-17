@@ -110,11 +110,48 @@ function cashRenderAccountCards(){
  const banks=cashBankAssets();$('cashBalances').innerHTML=banks.length?banks.map(a=>'<div class="cashBankCard"><small>'+esc(cashAccountName(a.id))+'</small><strong>'+money(bankBalance(a))+'</strong><span class="cashLabel">Saldo rekening terkini</span></div>').join(''):'<div class="cashEmptyBank">Belum ada rekening bank. <button type="button" id="cashCreateBank">+ Buat rekening bank</button> dahulu untuk mulai mencatat transaksi.</div>';
  const add=$('cashCreateBank');if(add)add.onclick=()=>assetForm('bank');
 }
+function cashInsight(rows, mode, day, bank) {
+ const {start} = cashRange(mode,day);
+ const days = 1 + Math.round((Date.parse(day) - Date.parse(start)) / 86400000);
+ const {income,expense} = cashTotals(rows.filter(t => t.type !== 'transfer' &&
+  t.date >= start && t.date <= day && (!bank || t.accountId === bank)));
+ const total = income + expense;
+ return {start, days, income, expense, net:income-expense,
+  incomeShare:total ? income/total : null, expenseShare:total ? expense/total : null};
+}
+const cashPercent = new Intl.NumberFormat('id-ID',{style:'percent',maximumFractionDigits:1});
+function renderCashInsights(mode, bank) {
+ const today = localDay();
+ const chosen = mode === 'custom' ? $('cashEnd').value : mode === 'all' ? today : $('cashReference').value;
+ const day = chosen && chosen <= today ? chosen : today;
+ $('cashInsightScope').textContent = 'Sampai ' + cashFullDay(day) + ' · ' +
+  (bank ? cashAccountName(bank) : 'Semua rekening') +
+  '. Persentase menunjukkan porsi dari total masuk + keluar. Rata-rata memakai seluruh hari kalender yang sudah dilalui dalam periode. Kedua arah kas selalu dibandingkan, tanpa transfer.';
+ const periods = [['day','Harian'],['week','Mingguan'],['month','Bulanan']];
+ $('cashInsightCards').innerHTML = periods.map(([mode,label]) => {
+  const v = cashInsight(transactionsOf(state),mode,day,bank);
+  const empty = v.incomeShare === null;
+  const status = empty ? 'Belum ada arus kas' : v.net > 0 ? 'Surplus' : v.net < 0 ? 'Defisit' : 'Seimbang';
+  const tone = empty || !v.net ? 'neutral' : v.net > 0 ? 'positive' : 'negative';
+  const mark = tone === 'positive' ? 'M4 17l6-6 4 4 6-9m-6 0h6v6' :
+   tone === 'negative' ? 'M12 3 2 20h20L12 3Zm0 6v5m0 3v.1' : 'M5 12h14';
+  const note = empty ? 'Belum ada pemasukan atau pengeluaran.' : v.net > 0 ? 'Pemasukan lebih besar ' + money(v.net) :
+   v.net < 0 ? 'Pengeluaran melebihi pemasukan ' + money(-v.net) : 'Jumlah masuk dan keluar sama.';
+  const metric = (title, amount, share) => '<div><dt>'+title+'</dt><dd>'+money(amount)+' <small>'+
+   (share === null ? '—' : cashPercent.format(share))+'</small></dd></div>';
+  return '<article class="cashInsight"><div class="insightHead"><h4>'+label+'</h4><span class="cashSignal '+tone+'">'+icon(mark)+status+'</span></div>'+
+   '<div class="insightDates">'+v.start+(v.start===day?'':' — '+day)+'</div>'+
+   '<dl>'+metric('Masuk',v.income,v.incomeShare)+metric('Keluar',v.expense,v.expenseShare)+'</dl>'+
+   '<div class="cashShareBar" aria-hidden="true"><i style="width:'+(v.incomeShare||0)*100+'%"></i><b style="width:'+(v.expenseShare||0)*100+'%"></b></div>'+
+   '<p>'+note+'</p>'+(v.income ? '<p>Pengeluaran memakai <strong>'+cashPercent.format(v.expense/v.income)+'</strong> dari pemasukan.</p>' : '')+'<div class="insightAverage">Rata-rata per hari · '+v.days+' hari<br>Masuk '+money(v.income/v.days)+' · Keluar '+money(v.expense/v.days)+'</div></article>';
+ }).join('');
+}
 function renderCashflow(){
  const banks=cashBankAssets();cashRenderAccountCards();
  const filter=$('cashBankFilter'),old=filter.value;filter.innerHTML=cashBankOptions(old,true);filter.value=banks.some(a=>a.id===old)?old:'';
  const mode=$('cashPeriod').value;
  $('cashReferenceWrap').hidden=mode==='custom'||mode==='all';$('cashStartWrap').hidden=mode!=='custom';$('cashEndWrap').hidden=mode!=='custom';
+ renderCashInsights(mode,filter.value);
  const range=cashFilterRange();$('cashPeriodLabel').innerHTML='<strong>'+esc(range.label)+'</strong> · Rentang waktu transaksi yang ditampilkan';
  const invalid=range.start>range.end;
  cashFiltered=invalid?[]:cashFilteredRows();

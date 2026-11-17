@@ -1,5 +1,24 @@
 'use strict';
-const coins = ['BTC','ETH','SOL','XRP','BNB','ADA','DOGE','USDT','USDC'];
+const coinNames = {
+ "BTC": "Bitcoin",
+ "ETH": "Ethereum",
+ "USDT": "Tether",
+ "SOL": "Solana",
+ "BNB": "BNB",
+ "XRP": "XRP",
+ "USDC": "USD Coin",
+ "DOGE": "Dogecoin",
+ "ADA": "Cardano",
+ "TRX": "TRON",
+ "LINK": "Chainlink",
+ "AVAX": "Avalanche",
+ "LTC": "Litecoin",
+ "BCH": "Bitcoin Cash",
+ "DOT": "Polkadot",
+ "XLM": "Stellar",
+ "SUI": "Sui"
+};
+const coins = Object.keys(coinNames);
 const businessFields = {
  cash:'Kas dan saldo bank usaha', inventory:'Persediaan barang', receivables:'Piutang yang diperkirakan tertagih',
  equipment:'Peralatan, properti dan aset tetap', other:'Aset usaha lainnya', liabilities:'Sisa utang usaha'
@@ -39,6 +58,26 @@ function dollars(a){
  if(a.mode==='balance')return a.balance;
  const price=a.mode==='auto'?market.prices[a.symbol]?.rate:a.unitPrice;
  return price==null?null:a.units*price;
+}
+function coinPositions(assets) {
+ const groups = new Map();
+ for (const asset of assets) {
+  if (asset.kind !== 'crypto' || asset.mode === 'balance') continue;
+  const symbol = asset.symbol.toUpperCase();
+  const row = groups.get(symbol) || {symbol, units: 0, positions: []};
+  row.units += asset.units;
+  row.positions.push(asset);
+  groups.set(symbol, row);
+ }
+ return [...groups.values()].sort((a,b) => a.symbol.localeCompare(b.symbol));
+}
+function coinBreakdown(assets) {
+ const groups = coinPositions(assets);
+ if (!groups.length) return '';
+ return '<details class="coinBreakdown"><summary>Kepemilikan per koin (' + groups.length + ')</summary><dl>' +
+  groups.map(row => '<div><dt>' + esc(row.symbol) + '</dt><dd>' +
+   row.units.toLocaleString('id-ID',{maximumFractionDigits:18}) + ' unit · ' +
+   positionValue(row.positions, dollars, usd) + '</dd></div>').join('') + '</dl></details>';
 }
 function validCrypto(a){
  if(!['balance','auto','manual'].includes(a.mode)||typeof a.wallet!=='string'||a.wallet.length>80||!number(a.fxManual,1e7)||!number(a.cost,1e12))return false;
@@ -165,9 +204,21 @@ function goldForm(a={}){
 function stockFx(a){return a.currency==='IDR'?1:(a.fxManual||market.fx?.rate||null)}
 function stockValue(a){const fx=stockFx(a);return fx===null?null:a.shares*a.price*fx}
 function stockCostValue(a){const fx=stockFx(a);return fx===null?null:a.shares*a.buyPrice*fx}
+const stockCatalog = {
+ IDX: {BBCA:'Bank Central Asia',BBRI:'Bank Rakyat Indonesia',BMRI:'Bank Mandiri',BBNI:'Bank Negara Indonesia',
+  TLKM:'Telkom Indonesia',ASII:'Astra International',ICBP:'Indofood CBP',INDF:'Indofood Sukses Makmur',ANTM:'Aneka Tambang'},
+ NASDAQ: {AAPL:'Apple',MSFT:'Microsoft',NVDA:'NVIDIA',AMZN:'Amazon',GOOGL:'Alphabet Kelas A',META:'Meta Platforms'},
+ NYSE: {JPM:'JPMorgan Chase',V:'Visa',KO:'Coca-Cola',XOM:'Exxon Mobil'}
+};
+function stockCatalogOptions() {
+ return Object.entries(stockCatalog).map(([market,stocks]) =>
+  '<optgroup label="'+(market === 'IDX' ? 'Indonesia · BEI' : 'Amerika Serikat · '+market)+'">'+
+  opts(Object.entries(stocks).map(([ticker,name])=>[market+'/'+ticker,ticker+' · '+name]))+'</optgroup>').join('');
+}
 function stockForm(a={}){
  a=a||{};
  $('specific').innerHTML=
+  label('Pilih saham','<select id="stockPreset"><option value="">Isi sendiri atau pilih emiten</option>'+stockCatalogOptions()+'</select>')+
   label('Kode saham / ticker','<input name="ticker" maxlength="14" pattern="[A-Za-z0-9.\\-]{1,14}" placeholder="BBCA / TLKM / AAPL" value="'+esc(a.ticker||'')+'" required>')+
   label('Bursa','<select name="exchange" id="stockExchange">'+opts([['IDX','Indonesia (BEI/IDX)'],['NYSE','Amerika (NYSE)'],['NASDAQ','Amerika (NASDAQ)'],['OTHER','Bursa lainnya']],a.exchange||'IDX')+'</select>')+
   label('Mata uang harga per lembar','<select name="currency" id="stockCurrency">'+opts([['IDR','Rupiah (IDR)'],['USD','Dolar AS (USD)']],a.currency||'IDR')+'</select>')+
@@ -191,7 +242,23 @@ function stockForm(a={}){
   $('stockPreview').textContent=fx===null?'Kurs USD belum tersedia. Masukkan kurs manual untuk menghitung nilai dalam rupiah.':
    'Nilai saham '+money(shares*price*fx)+lots+(buy>0?' · Selisih modal '+(price>=buy?'+':'−')+money(Math.abs((price-buy)*shares*fx)):'');
  }
- $('stockCurrency').onchange=paintFx;$('stockExchange').onchange=preview;$('specific').oninput=preview;paintFx();
+ const fields=$('form').elements;
+ const preset=$('stockPreset');
+ const currentPreset=()=>stockCatalog[fields.exchange.value]?.[fields.ticker.value.toUpperCase()]
+  ? fields.exchange.value+'/'+fields.ticker.value.toUpperCase() : '';
+ preset.value=currentPreset();
+ preset.onchange=()=>{
+  if(!preset.value){fields.ticker.focus();return}
+  const [exchange,ticker]=preset.value.split('/');
+  const previousName=stockCatalog[fields.exchange.value]?.[fields.ticker.value.toUpperCase()];
+  if(!fields.name.value.trim() || fields.name.value===previousName)fields.name.value=stockCatalog[exchange][ticker];
+  fields.ticker.value=ticker;
+  fields.exchange.value=exchange;
+  fields.currency.value=exchange==='IDX'?'IDR':'USD';
+  paintFx();
+ };
+ fields.ticker.oninput=()=>{preset.value=currentPreset()};
+ $('stockCurrency').onchange=paintFx;$('stockExchange').onchange=()=>{preset.value=currentPreset();preview()};$('specific').oninput=preview;paintFx();
 }
 
 const bankTypes={tabungan:'Tabungan',giro:'Giro',deposito:'Deposito',lainnya:'Lainnya'};
@@ -233,14 +300,14 @@ function details(a){
  if(a.cost>0&&amount!==null)lines.push('Selisih terhadap modal '+usd(amount-a.cost));
  return '<div class="detail">'+lines.join('<br>')+'</div>';
 }
-function cryptoForm(a={}){
+function cryptoForm(a={}, initialSymbol){
  a=a||{};
  const textBox=(key,title,max,value='')=>label(title,'<input name="'+key+'" maxlength="'+max+'" value="'+esc(value||'')+'">');
- $('specific').innerHTML=label('Cara mencatat','<select name="mode" id="cryptoMode">'+opts([['balance','Saldo di bursa kripto (USD)'],['auto','Jumlah koin × harga pasar otomatis'],['manual','Jumlah koin × harga USD manual']],a.mode)+'</select>')+'<div id="cryptoInputs"></div>'+textBox('wallet','Nama bursa atau dompet (opsional)',80,a.wallet)+num('cost','Modal posisi ini dalam USD (isi 0 jika belum diketahui)',a.cost??0,1e12,'any')+num('fxManual','Kurs manual Rp/USD (isi 0 untuk otomatis)',a.fxManual??0,1e7,'any')+'<p class="hint">Jika saldo bursa sudah mencakup semua koin, pilih satu cara pencatatan agar kepemilikan Anda dihitung sekali.</p>';
+ $('specific').innerHTML=label('Cara mencatat','<select name="mode" id="cryptoMode">'+opts([['balance','Saldo di bursa kripto (USD)'],['auto','Jumlah koin × harga pasar otomatis'],['manual','Jumlah koin × harga USD manual']],a.mode || 'auto')+'</select>')+'<div id="cryptoInputs"></div>'+textBox('wallet','Nama bursa atau dompet (opsional)',80,a.wallet)+num('cost','Modal posisi ini dalam USD (isi 0 jika belum diketahui)',a.cost??0,1e12,'any')+num('fxManual','Kurs manual Rp/USD (isi 0 untuk otomatis)',a.fxManual??0,1e7,'any')+'<p class="hint">Jika saldo bursa sudah mencakup semua koin, pilih satu cara pencatatan agar kepemilikan Anda dihitung sekali.</p>';
  function inputs(){
   const mode=$('cryptoMode').value;
   if(mode==='balance'){$('cryptoInputs').innerHTML=num('balance','Nilai portofolio dalam USD',a.balance,1e12,'any');return}
-  const symbol=mode==='auto'?label('Koin','<select name="symbol">'+opts(coins.map(c=>[c,c]),a.symbol)+'</select>'):label('Simbol koin','<input name="symbol" maxlength="18" pattern="[a-zA-Z0-9._\\-]{1,18}" value="'+esc(a.symbol||'')+'" required>');
+  const symbol=mode==='auto'?label('Koin','<select name="symbol">'+opts(coins.map(c=>[c,coinNames[c]===c?c:coinNames[c]+' ('+c+')']),a.symbol || initialSymbol)+'</select>'):label('Simbol koin','<input name="symbol" maxlength="18" pattern="[a-zA-Z0-9._\\-]{1,18}" value="'+esc(a.symbol||initialSymbol||'')+'" required>');
   $('cryptoInputs').innerHTML=symbol+num('units','Jumlah unit koin',a.units,1e15,'any')+(mode==='manual'?num('unitPrice','Harga per koin (USD)',a.unitPrice,1e12,'any'):'');
  }
  const previewBox = document.createElement('div');

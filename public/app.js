@@ -175,6 +175,8 @@ function renderInvestments() {
  const group = kind => state.assets.filter(a => a.kind === kind);
  const crypto = group('crypto'), gold = group('gold'), stocks = group('stock');
  $('cryptoTotal').textContent = positionValue(crypto, dollars, usd);
+ const usdt = crypto.reduce((sum, a) => sum + (a.mode !== 'balance' && a.symbol.toUpperCase() === 'USDT' ? a.units : 0), 0);
+ $('usdtUnits').textContent = usdt.toLocaleString('id-ID',{maximumFractionDigits:18}) + ' USDT';
  $('cryptoMetric').textContent = 'Dalam rupiah · ' + positionValue(crypto, value, money);
  $('cryptoReturn').textContent = returnNote(crypto, dollars, a => a.cost, usd);
  $('fxStatus').textContent = market.fx ? 'Kurs acuan: 1 USD = ' + money(market.fx.rate) + ' · ' + market.fx.date + (fxFailed ? ' (tersimpan)' : '') : 'Kurs otomatis belum tersedia.';
@@ -206,7 +208,7 @@ function render(){
  const selected=$('filter').value;
  $('portfolio').innerHTML='<div class="cards">'+keys.filter(k=>!selected||selected===k).map(k=>{
   const [name,detail,color,path]=categories[k], items=state.assets.filter(a=>a.kind===k);
-  return '<article class="card"><div class="cardTop"><div class="tile" style="background:'+color+'20;color:'+color+'">'+icon(path)+'</div><div><h3>'+name+'</h3><span class="hint">'+detail+'</span></div></div><strong>'+money(k==='business'?sums[k]-deficit:sums[k])+'</strong>'+items.map(a=>'<div class="row"><div>'+esc(a.name)+'<br><b>'+(value(a)===null?'Menunggu harga':money(value(a)))+'</b>'+details(a)+'</div><button data-id="'+a.id+'" aria-label="Ubah '+esc(a.name)+'">'+icon(paths.edit)+'</button></div>').join('')+'<button class="textBtn" data-new="'+k+'">+ Tambah '+name.toLowerCase()+'</button></article>';
+  return '<article class="card"><div class="cardTop"><div class="tile" style="background:'+color+'20;color:'+color+'">'+icon(path)+'</div><div><h3>'+name+'</h3><span class="hint">'+detail+'</span></div></div><strong>'+money(k==='business'?sums[k]-deficit:sums[k])+'</strong>'+(k==='crypto'?coinBreakdown(items):'')+items.map(a=>'<div class="row"><div>'+esc(a.name)+'<br><b>'+(value(a)===null?'Menunggu harga':money(value(a)))+'</b>'+details(a)+'</div><button data-id="'+a.id+'" aria-label="Ubah '+esc(a.name)+'">'+icon(paths.edit)+'</button></div>').join('')+'<button class="textBtn" data-new="'+k+'">+ Tambah '+name.toLowerCase()+'</button></article>';
  }).join('')+'</div>';
  const target=state.monthly*state.months,bal=sums.emergency;
  $('progress').innerHTML=target?'<b>'+money(bal)+' dari '+money(target)+'</b><div class="track"><div style="width:'+Math.min(100,bal/target*100)+'%"></div></div><span class="hint">Mencukupi '+(bal/state.monthly).toLocaleString('id-ID',{maximumFractionDigits:1})+' bulan dari target '+state.months+' bulan. '+(bal>=target?'Target tercapai.':'Masih perlu '+money(target-bal)+'.')+'</span>':'<p class="hint">Masukkan pengeluaran pokok per bulan dan jumlah bulan yang ingin Anda siapkan.</p>';
@@ -237,9 +239,9 @@ function modal(title,html,action,saveLabel='Simpan'){
 const label=(name,input)=>'<label>'+name+input+'</label>';
 const num=(name,text,v='',max='1000000000000000',step='1',min='0')=>label(text,'<input name="'+name+'" type="number" inputmode="decimal" step="'+step+'" min="'+min+'" max="'+max+'" value="'+esc(v??'')+'" required>');
 const opts=(items,val)=>items.map(([k,n])=>'<option value="'+k+'" '+(k===val?'selected':'')+'>'+n+'</option>').join('');
-function assetForm(k='house',a=null){
+function assetForm(k='house',a=null,initialSymbol){
  const options=opts(keys.map(id=>[id,categories[id][0]]),k);
- modal(a?'Ubah aset':'Tambah aset',label('Kategori','<select id="kind" '+(a?'disabled':'')+'>'+options+'</select>')+label('Nama aset','<input name="name" maxlength="90" placeholder="Misalnya rumah tinggal" value="'+esc(a?.name||'')+'" required>')+'<div id="specific"></div>'+(a?'<button type="button" id="del" class="soft warn">Hapus aset</button>':''),async data=>{
+ modal(a?'Ubah aset':'Tambah aset',label('Kategori','<select id="kind" '+(a?'disabled':'')+'>'+options+'</select>')+label('Nama aset','<input name="name" maxlength="90" placeholder="Misalnya rumah tinggal" value="'+esc(a?.name || (initialSymbol ? coinNames[initialSymbol]+' ('+initialSymbol+')' : ''))+'" required>')+'<div id="specific"></div>'+(a?'<button type="button" id="del" class="soft warn">Hapus aset</button>':''),async data=>{
   const kind=$('kind').value, item={...(a||{}),kind,id:a?.id||crypto.randomUUID(),name:data.get('name').trim()};
   for(const [field,v] of data)if(field!=='name')item[field]=field==='ticker'?v.trim().toUpperCase():['mode','wallet','symbol','bank','accountType','last4','valuationMode','direction','acquiredAt','deviceType','goldType','ticker','exchange','currency','broker','priceDate'].includes(field)?v.trim():Number(v);
   if(a&&aiAssetSignature(a)!==aiAssetSignature(item)){delete item.aiValuation;if(item.valuationSource==='ai')item.valuationSource='projection'}
@@ -249,7 +251,7 @@ function assetForm(k='house',a=null){
  function specific(){
   const kind=$('kind').value;
   $('specific').oninput=null;
-  if(kind==='crypto'){cryptoForm(a);return}
+  if(kind==='crypto'){cryptoForm(a,initialSymbol);return}
   if(kind==='stock'){stockForm(a);return}
   if(kind==='gold'){goldForm(a);return}
   if(kind==='business'){businessForm(a);return}
@@ -298,6 +300,7 @@ $('close').onclick=()=>{if(!saving)$('dlg').close()};$('dlg').addEventListener('
 $('filter').innerHTML='<option value="">Semua kategori</option>'+opts(keys.map(k=>[k,categories[k][0]]));
 $('filter').onchange=render;$('add').onclick=()=>assetForm();
 setupCashflow();setupAIValuations();
+$('usdtAdd').onclick = () => assetForm('crypto',null,'USDT');
 $('bankGo').onclick=()=>{$('filter').value='bank';render();$('portofolio').scrollIntoView({behavior:'smooth',block:'start'})};
 for(const [buttonId,categoryId] of [['goldGo','gold'],['stockGo','stock'],['cryptoGo','crypto']]){
  $(buttonId).onclick=()=>{$('filter').value=categoryId;render();$('portofolio').scrollIntoView({behavior:'smooth',block:'start'})};

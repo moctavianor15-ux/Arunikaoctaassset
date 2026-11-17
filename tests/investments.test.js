@@ -57,3 +57,18 @@ test('V12: kode asli tetap mempertahankan binding D1 dan API investasi tanpa mig
  assert(source.includes("'/favicon.ico'"));assert(valid.includes("if(a.kind==='stock')return validStock(a)"));
  assert(!read('public/portfolio.js').includes('apiKey='));
 });
+
+test('Kartu investasi menjumlahkan gram tanpa harga dan membatasi laba/rugi ke posisi bermodal',()=>{
+ const ctx=context(), nodes={};
+ ctx.document.getElementById=id=>nodes[id]??={};
+ ctx.sample=[gold,{...gold,grams:0.125,mode:'spot'},stock,
+  {kind:'crypto',mode:'balance',balance:150,cost:100,fxManual:15000},
+  {kind:'crypto',mode:'balance',balance:25,cost:0,fxManual:0}];
+ evaluate(ctx,'state.assets=sample;renderInvestments()');
+ assert.equal(nodes.goldWeight.textContent,'10,125 gram terkumpul');
+ assert.match(nodes.goldTotal.textContent,/sebagian/);
+ assert.match(nodes.cryptoReturn.textContent,/50%.*1 dari 2 posisi/);
+ assert.match(nodes.cryptoMetric.textContent,/2\.250\.000.*sebagian/);
+ assert.match(nodes.stockReturn.textContent,/120\.000/);
+ assert.equal(nodes.stockShares.textContent,'200 lembar · 1 posisi');
+});

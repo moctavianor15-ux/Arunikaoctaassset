@@ -92,7 +92,7 @@ test('rincian kekayaan bersih menghitung bank dan semua kategori, mengurangi uta
   {id:'biz',kind:'business',name:'Usaha',cash:100,inventory:0,receivables:0,equipment:0,other:0,liabilities:200,share:50}
  ],debt:120,monthly:0,months:6};
  ctx.sample=testState;
- const s=vm.runInContext('state=sample; summary()',ctx);
+ const s=vm.runInContext("localDay = () => '2026-11-16'; state=sample; summary()",ctx);
  assert.equal(s.sums.bank,300);
  assert.equal(s.sums.house,500);
  assert.equal(s.total,800);
@@ -175,7 +175,7 @@ test('API dapat menyimpan aset baru, membaca kembali serta memulihkan bersama as
 test('perincian kekayaan bersih termasuk HP/elektronik, tidak menghitung dua kali selisih',()=>{
  const ctx=contextForValuation();
  ctx.sample={...state,assets:[...state.assets,{...phone,acquiredAt:'2026-11-16'},{...laptop,acquiredAt:'2026-11-16'}]};
- const result=vm.runInContext('state=sample; summary()',ctx);
+ const result=vm.runInContext("localDay = () => '2026-11-16'; state=sample; summary()",ctx);
  assert.equal(result.sums.phone,12000000);
  assert.equal(result.sums.electronics,20000000);
  assert.equal(result.total,32000300);
@@ -371,7 +371,7 @@ test('nilai pribadi dan AI terpisah, validasi snapshot dan aset lama tetap valid
  const app=readFileSync(new URL('../public/app.js',import.meta.url),'utf8');
  vm.runInContext(portfolio+'\n'+cash+'\n'+aiScript+'\n'+app.slice(0,app.indexOf("$('form').onsubmit")),ctx);
  ctx.example={...state,assets:[phone]};
- assert(Math.abs(vm.runInContext('state=example;value(state.assets[0])',ctx)-8000000)<2000);
+ assert(Math.abs(vm.runInContext("localDay = () => '2026-11-16'; state=example;value(state.assets[0])",ctx)-8000000)<2000);
  ctx.example.assets[0]={...phone,ownerValue:9000000,aiValuation:ai,valuationSource:'user'};
  assert.equal(vm.runInContext('state=example;value(state.assets[0])',ctx),9000000);
  ctx.example.assets[0]={...phone,ownerValue:9000000,aiValuation:ai,valuationSource:'ai'};

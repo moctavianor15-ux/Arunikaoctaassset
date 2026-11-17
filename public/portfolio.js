@@ -209,14 +209,14 @@ function details(a){
  if(a.kind==='gold'){
   const amount=a.mode==='manual'?a.grams*a.rate:quote?a.grams*a.karat/24*quote.rate:null;
   const difference=a.costTotal>0&&amount!==null?'<br>Modal '+money(a.costTotal)+' · '+(amount>=a.costTotal?'Untung belum direalisasi ':'Rugi belum direalisasi ')+money(Math.abs(amount-a.costTotal)):'';
-  return '<div class="detail">'+esc(goldKinds[a.goldType]||'Emas')+' · '+a.grams.toLocaleString('id-ID')+' gram · '+a.karat+'K · '+(a.mode==='spot'?'acuan spot otomatis':'buyback manual')+difference+'</div>';
+  return '<div class="detail">'+esc(goldKinds[a.goldType]||'Emas')+' · '+qty.format(a.grams)+' gram · '+a.karat+'K · '+(a.mode==='spot'?'acuan spot otomatis':'buyback manual')+difference+'</div>';
  }
  if(a.kind==='stock'){
   const amount=stockValue(a),cost=stockCostValue(a);
   const gain=cost!==null&&a.buyPrice>0?'<br>Modal '+money(cost)+' · '+(amount>=cost?'Untung belum direalisasi ':'Rugi belum direalisasi ')+money(Math.abs(amount-cost)):'';
   return '<div class="detail">'+esc(a.exchange)+' · '+esc(a.ticker)+' · '+a.shares.toLocaleString('id-ID',{maximumFractionDigits:6})+' lembar'+
    (a.exchange==='IDX'?' ('+(a.shares/100).toLocaleString('id-ID',{maximumFractionDigits:4})+' lot)':'')+'<br>'+
-   'Harga '+esc(a.currency)+' '+a.price.toLocaleString('id-ID')+' / lembar · '+esc(a.priceDate)+(a.broker?'<br>'+esc(a.broker):'')+
+   'Harga '+esc(a.currency)+' '+qty.format(a.price)+' / lembar · '+esc(a.priceDate)+(a.broker?'<br>'+esc(a.broker):'')+
    (amount===null?'<br>Kurs USD/IDR belum tersedia. Isi kurs manual untuk menghitung.':gain)+'</div>';
  }
  if(a.kind==='bank')return '<div class="detail">'+esc(a.bank)+' · '+esc(bankTypeName(a.accountType))+(a.last4?' · Rekening ••••'+esc(a.last4):'')+'</div>'; 
@@ -236,14 +236,31 @@ function details(a){
 function cryptoForm(a={}){
  a=a||{};
  const textBox=(key,title,max,value='')=>label(title,'<input name="'+key+'" maxlength="'+max+'" value="'+esc(value||'')+'">');
- $('specific').innerHTML=label('Cara mencatat','<select name="mode" id="cryptoMode">'+opts([['balance','Saldo total dari exchange (USD)'],['auto','Jumlah koin × harga pasar otomatis'],['manual','Jumlah koin × harga USD manual']],a.mode)+'</select>')+'<div id="cryptoInputs"></div>'+textBox('wallet','Exchange atau dompet (opsional)',80,a.wallet)+num('cost','Total modal posisi ini (USD, isi 0 jika dilewati)',a.cost??0,1e12,'any')+num('fxManual','Kurs manual Rp/USD (isi 0 untuk otomatis)',a.fxManual??0,1e7,'any')+'<p class="hint">Catat saldo total exchange atau rincian koin yang membentuk saldo tersebut sekali saja.</p>';
+ $('specific').innerHTML=label('Cara mencatat','<select name="mode" id="cryptoMode">'+opts([['balance','Saldo di bursa kripto (USD)'],['auto','Jumlah koin × harga pasar otomatis'],['manual','Jumlah koin × harga USD manual']],a.mode)+'</select>')+'<div id="cryptoInputs"></div>'+textBox('wallet','Nama bursa atau dompet (opsional)',80,a.wallet)+num('cost','Modal posisi ini dalam USD (isi 0 jika belum diketahui)',a.cost??0,1e12,'any')+num('fxManual','Kurs manual Rp/USD (isi 0 untuk otomatis)',a.fxManual??0,1e7,'any')+'<p class="hint">Jika saldo bursa sudah mencakup semua koin, pilih satu cara pencatatan agar kepemilikan Anda dihitung sekali.</p>';
  function inputs(){
   const mode=$('cryptoMode').value;
   if(mode==='balance'){$('cryptoInputs').innerHTML=num('balance','Nilai portofolio dalam USD',a.balance,1e12,'any');return}
   const symbol=mode==='auto'?label('Koin','<select name="symbol">'+opts(coins.map(c=>[c,c]),a.symbol)+'</select>'):label('Simbol koin','<input name="symbol" maxlength="18" pattern="[a-zA-Z0-9._\\-]{1,18}" value="'+esc(a.symbol||'')+'" required>');
   $('cryptoInputs').innerHTML=symbol+num('units','Jumlah unit koin',a.units,1e15,'any')+(mode==='manual'?num('unitPrice','Harga per koin (USD)',a.unitPrice,1e12,'any'):'');
  }
- $('cryptoMode').onchange=inputs;inputs();
+ const previewBox = document.createElement('div');
+ previewBox.className = 'estimate';
+ previewBox.setAttribute('aria-live','polite');
+ $('specific').append(previewBox);
+ function preview() {
+  const data = new FormData($('form'));
+  const mode = data.get('mode');
+  const quantity = data.get(mode === 'balance' ? 'balance' : 'units');
+  if (!quantity) { previewBox.textContent = 'Masukkan saldo atau jumlah koin untuk melihat estimasi.'; return; }
+  const price = mode === 'balance' ? 1 : mode === 'manual' ? data.get('unitPrice') : market.prices[data.get('symbol')]?.rate;
+  if (!Number(price)) { previewBox.textContent = mode === 'manual' ? 'Masukkan harga per koin dalam USD.' : 'Harga koin akan diperbarui setelah posisi disimpan.'; return; }
+  const amount = Number(quantity) * Number(price);
+  const fx = Number(data.get('fxManual')) || market.fx?.rate;
+  previewBox.textContent = usd(amount) + (fx ? ' · ' + money(amount * fx) : ' · Menunggu kurs rupiah');
+ }
+ $('cryptoMode').onchange = () => { inputs(); preview(); };
+ $('specific').oninput = preview;
+ inputs(); preview();
 }
 function businessForm(a={}){
  a=a||{};

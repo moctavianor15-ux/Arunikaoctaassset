@@ -95,3 +95,18 @@
   .brandLogo {width:160px}
   .loginStory img.loginBrandLogo {display:block;width:185px;height:auto;margin:0 0 14px}
 }
+
+.heroTools{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}
+.privacyToggle{display:inline-flex;align-items:center;gap:8px;min-height:42px;padding:7px 13px;border:1px solid #ffffff73;border-radius:24px;background:#163d37;color:white;font:inherit;font-size:13px;cursor:pointer}
+.privacyToggle svg{width:20px;height:20px}
+.privacyToggle:hover{background:#275448}
+.privacyToggle:focus-visible{outline:3px solid #ffe2a4;outline-offset:3px}
+.holdings .positionMetric{font-size:15px;font-weight:700;color:#244c40}
+.holdings p{margin:6px 0;line-height:1.45}
+.privacyReveal{display:none}
+.balancesHidden .privatePanel>:not(.privacyReveal),.balancesHidden #netBreakdown,.balancesHidden #toggleNet,.balancesHidden #debt,.balancesHidden #debtDetail,.balancesHidden .holdings p,.balancesHidden .holdings button:not(#marketRefresh),.balancesHidden #composition,.balancesHidden #count,.balancesHidden .grid>.panel:first-child{display:none!important}
+.balancesHidden .grid{grid-template-columns:1fr}
+.balancesHidden .privacyReveal{display:inline-flex;min-height:44px;align-items:center}
+.balancesHidden :is(#net,#total,#owed,.holdings h2){font-size:0;line-height:1.4;letter-spacing:0}
+.balancesHidden :is(#net,#total,#owed,.holdings h2)::before{content:"••••••";font-size:20px;letter-spacing:.12em}
+.balancesHidden #net::before{font-size:clamp(34px,5vw,56px)}

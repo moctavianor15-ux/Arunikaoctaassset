@@ -8,7 +8,7 @@ const categories = {
  electronics:['Elektronik lainnya','Laptop, TV, tablet, kamera & lainnya','#8d6b97','M3 4h18v12H3V4Zm6 16h6m-3-4v4M6 8h5'],
  gold:['Portofolio emas','Batangan, perhiasan & emas digital','#b68c39','m3 18 2-6h6l2 6H3Zm11 0-1-6h6l2 6h-7ZM8 10l2-6h5l2 6H8Z'],
  stock:['Portofolio saham','Saham BEI & pasar luar negeri','#3e7b83','M3 3v18h18M7 16l5-5 3 2 5-7M17 6h3v3'],
- crypto:['Kripto','Saldo USD & koin digital','#7055a4','m12 2 8 5v10l-8 5-8-5V7l8-5Zm0 4-4 6 4 3 4-3-4-6Zm-4 9 4 4 4-4'],
+ crypto:['Portofolio kripto','Saldo dolar AS dan kepemilikan koin','#7055a4','m12 2 8 5v10l-8 5-8-5V7l8-5Zm0 4-4 6 4 3 4-3-4-6Zm-4 9 4 4 4-4'],
  business:['Aset usaha','Ekuitas sesuai kepemilikan','#397189','M3 10l2-6h14l2 6m-18 0h18m-17 1v9h16v-9m-13 9v-6h5v6'],
  bank:['Tabungan bank','Saldo rekening tabungan, giro & deposito','#327a74','M3 9l9-6 9 6v2H3V9Zm2 4v6m5-6v6m4-6v6m5-6v6M3 21h18'],
  emergency:['Tabungan darurat','Cadangan kebutuhan pokok','#4b9692','m12 3 8 3v5c0 5-4 8-8 10-4-2-8-5-8-10V6l8-3Zm-4 9 3 3 5-6'],
@@ -149,6 +149,43 @@ function renderValuationSummary(){
  (entries.length?'<div class="valuationRows">'+entries.map(({asset,info})=>'<div><span><b>'+esc(asset.name)+'</b><small>'+(info.auto?'Proyeksi per tanggal '+esc(localDay()):'Dibanding nilai beli')+'</small></span>'+valuationDelta(info)+'</div>').join('')+'</div>':'<p class="hint">Tambahkan HP atau barang elektronik untuk melihat perubahan nilainya. Rumah, mobil, dan motor dapat menggunakan mode otomatis secara opsional.</p>')+
  '<p class="hint">Bagian ini memperlihatkan proyeksi dasar, bukan keuntungan terealisasi. Jika Anda memilih nilai pribadi atau AI, kekayaan bersih menggunakan nilai yang dipilih dan proyeksi ini tidak ditambahkan lagi.</p>';
 }
+const qty = new Intl.NumberFormat('id-ID', {maximumFractionDigits: 8});
+function returnNote(rows, current, cost, format) {
+ if (!rows.length) return 'Belum ada posisi.';
+ let change = 0, invested = 0, counted = 0;
+ for (const row of rows) {
+  const basis = cost(row), amount = current(row);
+  if (basis > 0 && amount !== null) {
+   change += amount - basis;
+   invested += basis;
+   counted++;
+  }
+ }
+ if (!counted) return 'Isi modal dan lengkapi harga untuk melihat laba/rugi.';
+ return 'Laba/rugi belum terealisasi: ' + (change > 0 ? '+' : '') + format(change)
+  + ' (' + (100 * change / invested).toLocaleString('id-ID', {maximumFractionDigits: 2}) + '%) · ' + counted + ' dari ' + rows.length + ' posisi';
+}
+function positionValue(rows, getter, format) {
+ const known = rows.map(getter).filter(n => n !== null);
+ if (rows.length && !known.length) return 'Menunggu harga atau kurs';
+ const sum = known.reduce((total, n) => total + n, 0);
+ return format(sum) + (known.length < rows.length ? ' (sebagian)' : '');
+}
+function renderInvestments() {
+ const group = kind => state.assets.filter(a => a.kind === kind);
+ const crypto = group('crypto'), gold = group('gold'), stocks = group('stock');
+ $('cryptoTotal').textContent = positionValue(crypto, dollars, usd);
+ $('cryptoMetric').textContent = 'Dalam rupiah · ' + positionValue(crypto, value, money);
+ $('cryptoReturn').textContent = returnNote(crypto, dollars, a => a.cost, usd);
+ $('fxStatus').textContent = market.fx ? 'Kurs acuan: 1 USD = ' + money(market.fx.rate) + ' · ' + market.fx.date + (fxFailed ? ' (tersimpan)' : '') : 'Kurs otomatis belum tersedia.';
+ $('goldTotal').textContent = positionValue(gold, value, money);
+ $('goldWeight').textContent = qty.format(gold.reduce((n, a) => n + a.grams, 0)) + ' gram terkumpul';
+ $('goldNote').textContent = gold.length + ' posisi · Berat seluruh emas sesuai kadar masing-masing.';
+ $('stockTotal').textContent = positionValue(stocks, value, money);
+ $('stockShares').textContent = qty.format(stocks.reduce((n, a) => n + a.shares, 0)) + ' lembar · ' + stocks.length + ' posisi';
+ $('stockReturn').textContent = returnNote(stocks, stockValue, stockCostValue, money);
+ $('stockNote').textContent = 'Harga per lembar diperbarui manual.';
+}
 function render(){
  const {sums,missing,deficit,total,net}=summary();
  $('total').textContent=money(total)+(missing?' *':'');$('net').textContent=money(net)+(missing?' *':'');$('owed').textContent=money(state.debt);
@@ -160,13 +197,7 @@ function render(){
  $('quoteStatus').textContent=fetchState||'Mengambil acuan pasar…';
  $('quoteTime').textContent=quote?'Emas '+fmtDate(quote.goldDate)+' · Kurs '+quote.fxDate:'Gold API · Kurs USD/IDR Frankfurter';
  $('refresh').disabled=busy;$('marketRefresh').disabled=busy;
- const holdings=state.assets.filter(a=>a.kind==='crypto'), known=holdings.map(dollars).filter(v=>v!==null);
- $('cryptoTotal').textContent=usd(known.reduce((sum,n)=>sum+n,0))+(known.length<holdings.length?' *':'');
- $('fxStatus').textContent=(market.fx?'1 USD = '+money(market.fx.rate)+' · Frankfurter '+market.fx.date+(fxFailed?' (kurs tersimpan)':''):'Kurs USD otomatis belum tersedia')+(known.length<holdings.length?' · '+(holdings.length-known.length)+' posisi menunggu harga':'');
- $('goldTotal').textContent=money(sums.gold)+(state.assets.some(a=>a.kind==='gold'&&value(a)===null)?' *':'');
- $('goldNote').textContent=state.assets.filter(a=>a.kind==='gold').length+' posisi · '+(quote?'acuan '+fmtDate(quote.goldDate):'harga spot belum tersedia; gunakan harga manual');
- $('stockTotal').textContent=money(sums.stock)+(state.assets.some(a=>a.kind==='stock'&&value(a)===null)?' *':'');
- $('stockNote').textContent=state.assets.filter(a=>a.kind==='stock').length+' posisi · harga saham diisi manual (bukan realtime).';
+ renderInvestments();
  $('businessTotal').textContent=money(sums.business-deficit);
  $('businessNote').textContent=deficit?'Defisit ekuitas '+money(deficit)+' mengurangi estimasi kekayaan bersih.':'Ekuitas bersih sesuai porsi kepemilikan Anda.';
  $('bankTotal').textContent=money(sums.bank);
@@ -175,10 +206,15 @@ function render(){
  const selected=$('filter').value;
  $('portfolio').innerHTML='<div class="cards">'+keys.filter(k=>!selected||selected===k).map(k=>{
   const [name,detail,color,path]=categories[k], items=state.assets.filter(a=>a.kind===k);
-  return '<article class="card"><div class="cardTop"><div class="tile" style="background:'+color+'20;color:'+color+'">'+icon(path)+'</div><div><h3>'+name+'</h3><span class="hint">'+detail+'</span></div></div><strong>'+money(k==='business'?sums[k]-deficit:sums[k])+'</strong>'+items.map(a=>'<div class="row"><div>'+esc(a.name)+'<br><b>'+(value(a)===null?'Menunggu harga':money(value(a)))+'</b>'+details(a)+(k==='gold'?'<br>'+a.grams+' g · '+a.karat+' K · '+(a.mode==='manual'?'Buyback manual':'Spot'):'')+'</div><button data-id="'+a.id+'" aria-label="Ubah '+esc(a.name)+'">'+icon(paths.edit)+'</button></div>').join('')+'<button class="textBtn" data-new="'+k+'">+ Tambah '+name.toLowerCase()+'</button></article>';
+  return '<article class="card"><div class="cardTop"><div class="tile" style="background:'+color+'20;color:'+color+'">'+icon(path)+'</div><div><h3>'+name+'</h3><span class="hint">'+detail+'</span></div></div><strong>'+money(k==='business'?sums[k]-deficit:sums[k])+'</strong>'+items.map(a=>'<div class="row"><div>'+esc(a.name)+'<br><b>'+(value(a)===null?'Menunggu harga':money(value(a)))+'</b>'+details(a)+'</div><button data-id="'+a.id+'" aria-label="Ubah '+esc(a.name)+'">'+icon(paths.edit)+'</button></div>').join('')+'<button class="textBtn" data-new="'+k+'">+ Tambah '+name.toLowerCase()+'</button></article>';
  }).join('')+'</div>';
  const target=state.monthly*state.months,bal=sums.emergency;
  $('progress').innerHTML=target?'<b>'+money(bal)+' dari '+money(target)+'</b><div class="track"><div style="width:'+Math.min(100,bal/target*100)+'%"></div></div><span class="hint">Mencukupi '+(bal/state.monthly).toLocaleString('id-ID',{maximumFractionDigits:1})+' bulan dari target '+state.months+' bulan. '+(bal>=target?'Target tercapai.':'Masih perlu '+money(target-bal)+'.')+'</span>':'<p class="hint">Masukkan pengeluaran pokok per bulan dan jumlah bulan yang ingin Anda siapkan.</p>';
+ if (document.documentElement.classList.contains('balancesHidden')) {
+  for (const id of ['net','total','owed','cryptoTotal','stockTotal','goldTotal','bankTotal','businessTotal']) {
+   $(id).textContent = '••••••';
+  }
+ }
 }
 async function refresh(){
  if(busy)return;busy=true;fetchState='Memeriksa harga dan kurs…';render();
@@ -229,12 +265,41 @@ function assetForm(k='house',a=null){
  };
 }
 $('form').onsubmit=async e=>{e.preventDefault();try{if(handler){await handler(new FormData(e.target));$('dlg').close()}}catch(err){$('error').textContent=err.message||'Perubahan gagal disimpan.'}};
+const privacyKey = 'arunika.hideBalances';
+const eye = 'M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12Zm13 0a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z';
+const eyeOff = 'm3 3 18 18M10 5.2a12 12 0 0 1 2-.2c6.5 0 10 7 10 7a19 19 0 0 1-3 3.9M6.1 6.1A20 20 0 0 0 2 12s3.5 7 10 7c2 0 3.7-.6 5.2-1.5M9 11a3 3 0 0 0 4 4';
+function showPrivacy(hidden) {
+ document.documentElement.classList.toggle('balancesHidden', hidden);
+ const button = $('balanceToggle');
+ button.setAttribute('aria-pressed', String(hidden));
+ button.innerHTML = icon(hidden ? eyeOff : eye) + '<span>' + (hidden ? 'Tampilkan saldo' : 'Sembunyikan saldo') + '</span>';
+ button.setAttribute('aria-label', button.textContent);
+}
+function setPrivacy(hidden) {
+ showPrivacy(hidden);
+ if (ready) render();
+ try { localStorage.setItem(privacyKey, hidden ? '1' : '0'); } catch {}
+}
+for (const selector of ['#kas','.valuePanel','#aiValuationPanel','#portofolio','#rencana']) {
+ const panel = document.querySelector(selector);
+ const reveal = document.createElement('button');
+ reveal.type = 'button';
+ reveal.className = 'privacyReveal soft';
+ reveal.textContent = 'Tampilkan saldo untuk membuka ' + panel.querySelector('h2').textContent.toLowerCase();
+ reveal.onclick = () => { setPrivacy(false); panel.querySelector('button,select')?.focus(); };
+ panel.append(reveal);
+ panel.classList.add('privatePanel');
+}
+$('balanceToggle').onclick = () => setPrivacy(!document.documentElement.classList.contains('balancesHidden'));
+let initialPrivacy = false;
+try { initialPrivacy = localStorage.getItem(privacyKey) === '1'; } catch {}
+showPrivacy(initialPrivacy);
 $('close').onclick=()=>{if(!saving)$('dlg').close()};$('dlg').addEventListener('cancel',e=>{if(saving)e.preventDefault()});
 $('filter').innerHTML='<option value="">Semua kategori</option>'+opts(keys.map(k=>[k,categories[k][0]]));
 $('filter').onchange=render;$('add').onclick=()=>assetForm();
 setupCashflow();setupAIValuations();
 $('bankGo').onclick=()=>{$('filter').value='bank';render();$('portofolio').scrollIntoView({behavior:'smooth',block:'start'})};
-for(const [buttonId,categoryId] of [['goldGo','gold'],['stockGo','stock']]){
+for(const [buttonId,categoryId] of [['goldGo','gold'],['stockGo','stock'],['cryptoGo','crypto']]){
  $(buttonId).onclick=()=>{$('filter').value=categoryId;render();$('portofolio').scrollIntoView({behavior:'smooth',block:'start'})};
 }
 $('toggleNet').onclick=()=>{const open=$('netBreakdown').hidden;$('netBreakdown').hidden=!open;$('toggleNet').setAttribute('aria-expanded',String(open));$('toggleNet').textContent=open?'Tutup rincian kekayaan bersih':'Lihat rincian kekayaan bersih';if(open)$('netBreakdown').scrollIntoView({behavior:'smooth',block:'nearest'})};

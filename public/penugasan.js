@@ -32,6 +32,14 @@ async function load(){
     rows=data.days; ready=true; render(); $('notice').textContent='';
   }catch(e){if(ticket===serial){$('notice').textContent=e.message; $('reload').hidden=false;}}
 }
+function markAssignment(element,row){
+  // Consecutive identities use widely separated hues. The stored ID also
+  // provides a readable distinction when two colors look similar.
+  const hue=((row.colorId-1)*137.508+275)%360;
+  element.style.setProperty('--duty-edge',`hsl(${hue} 62% 37%)`);
+  element.style.setProperty('--duty-bg',`hsl(${hue} 68% 93%)`);
+  element.classList.add('assignmentColor');
+}
 function render(){
   $('month').value=month;
   const first=stamp(month+'-01');
@@ -40,6 +48,17 @@ function render(){
   $('source').replaceChildren();
   if(source){const a=node('a','Sumber kalender nasional '+month.slice(0,4));a.href=source;a.target='_blank';a.rel='noopener';$('source').append(a);}
   else $('source').textContent='Data libur nasional dan cuti bersama tahun ini belum tersedia.';
+  const legend=$('assignments');
+  legend.replaceChildren();legend.hidden=!rows.length;
+  const seen=new Set();
+  for(const row of rows){
+    if(seen.has(row.colorId))continue;
+    seen.add(row.colorId);
+    const item=node('li','');
+    markAssignment(item,row);
+    item.append(node('strong','#'+row.colorId+' · '+row.reference),node('span',row.activity));
+    legend.append(item);
+  }
   const grid=$('grid'); grid.replaceChildren();
   for(let i=0;i<(first.getUTCDay()+6)%7;i++)grid.append(node('span',''));
   for(let d=new Date(first);iso(d).startsWith(month);d.setUTCDate(d.getUTCDate()+1)){
@@ -49,11 +68,12 @@ function render(){
     if(day===today)b.setAttribute('aria-current','date');
     if(holiday)b.append(node('small',holiday.name));
     if(row){
-      b.classList.add('assigned',statusClass[row.status]);
-      b.append(node('small',row.kind),node('small',row.status,'statusLabel'));
+      markAssignment(b,row);
+      b.title=row.reference+' · '+row.activity;
+      b.append(node('small','#'+row.colorId+' · '+row.activity,'taskName'),node('small',row.kind),node('small',row.status,'statusLabel '+statusClass[row.status]));
       if(holiday)b.querySelector('small').classList.add(appearance);
     }
-    b.setAttribute('aria-label',[day,holiday?.category,holiday?.name,row?.activity,row?.status].filter(Boolean).join(', '));
+    b.setAttribute('aria-label',[day,holiday?.category,holiday?.name,row?.reference,row?.activity,row?.status].filter(Boolean).join(', '));
     b.disabled=!ready;b.onclick=()=>openDay(day,row);grid.append(b);
   }
   $('totals').replaceChildren();$('list').replaceChildren();
@@ -65,7 +85,7 @@ function render(){
   }
   for(const r of rows){
     const tr=node('tr',''),td=node('td',''),b=node('button',r.day);
-    b.onclick=()=>openDay(r.day,r);td.append(b);tr.append(td);
+    markAssignment(b,r);b.title=r.reference+' · '+r.activity;b.onclick=()=>openDay(r.day,r);td.append(b);tr.append(td);
     for(const value of [r.reference+' · '+r.activity,r.destination,r.kind,r.status,money(r.amount),money(r.transport),money(r.other)+(r.detail?' · '+r.detail:''),money(totalCost(r))])tr.append(node('td',value));
     $('list').append(tr);
   }

@@ -4,9 +4,15 @@
 .draft{--tint:#fff2d6;--edge:#be7908;--ink:#6d4405}
 .submitted{--tint:#e2eeff;--edge:#3973b8;--ink:#234d81}
 .paid{--tint:#dcf3e7;--edge:#29805a;--ink:#184f37}
-.assigned,.legend :is(.unclaimed,.draft,.submitted,.paid){background:var(--tint);color:var(--ink);border-left:4px solid var(--edge)}
+.statusLabel,.legend :is(.unclaimed,.draft,.submitted,.paid){background:var(--tint);color:var(--ink);border-left:4px solid var(--edge)}
 .cell .statusLabel{font-weight:750}
 .cell small:is(.national,.leave){border-radius:3px;padding:1px 3px}
 #receipt:not(:empty){background:#ecf6ef;padding:10px 14px;border-radius:8px}
 #placement{font-size:14px;color:#405d55}
 #another{background:#e9f4ef;color:#205b46;margin-top:8px}
+
+.assignmentColor{background:var(--duty-bg);border-left:5px solid var(--duty-edge);color:#202c29}
+.taskName{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;font-weight:700}
+.cell .statusLabel{border-left:2px solid var(--edge);border-radius:3px;padding:2px 4px}
+#assignments{display:flex;flex-wrap:wrap;gap:7px;list-style:none;padding:0;margin:14px 0}
+#assignments li{display:grid;gap:1px;padding:5px 9px;border-radius:5px;font-size:12px;max-width:100%;overflow-wrap:anywhere}

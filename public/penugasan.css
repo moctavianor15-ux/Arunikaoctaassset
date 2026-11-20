@@ -16,3 +16,14 @@
 .cell .statusLabel{border-left:2px solid var(--edge);border-radius:3px;padding:2px 4px}
 #assignments{display:flex;flex-wrap:wrap;gap:7px;list-style:none;padding:0;margin:14px 0}
 #assignments li{display:grid;gap:1px;padding:5px 9px;border-radius:5px;font-size:12px;max-width:100%;overflow-wrap:anywhere}
+
+.cell.assignmentColor{border:1px solid var(--duty-edge);border-top:6px solid var(--duty-edge);background:var(--duty-bg)}
+.claimGroup{margin:8px 0;border:1px solid #cbd6d0;border-radius:8px;overflow:hidden}
+.claimGroup summary{cursor:pointer;display:flex;align-items:center;gap:10px;padding:10px 12px;list-style:none}
+.claimGroup summary::-webkit-details-marker{display:none}
+.claimGroup summary::before{content:'›';font-size:22px;line-height:1}
+.claimGroup[open] summary::before{transform:rotate(90deg)}
+.claimGroup summary:focus-visible{outline:3px solid #183d34;outline-offset:-3px}
+.claimTitle{display:grid;overflow-wrap:anywhere}.claimTitle small{margin-top:2px}
+.groupTotal{margin-left:auto;text-align:right;font-weight:600}
+@media(max-width:600px){.claimGroup summary{flex-wrap:wrap}.groupTotal{font-size:13px}.claimTitle{max-width:86%}}

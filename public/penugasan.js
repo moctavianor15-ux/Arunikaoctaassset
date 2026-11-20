@@ -32,13 +32,55 @@ async function load(){
     rows=data.days; ready=true; render(); $('notice').textContent='';
   }catch(e){if(ticket===serial){$('notice').textContent=e.message; $('reload').hidden=false;}}
 }
-function markAssignment(element,row){
-  // Consecutive identities use widely separated hues. The stored ID also
-  // provides a readable distinction when two colors look similar.
-  const hue=((row.colorId-1)*137.508+275)%360;
-  element.style.setProperty('--duty-edge',`hsl(${hue} 62% 37%)`);
-  element.style.setProperty('--duty-bg',`hsl(${hue} 68% 93%)`);
+function assignmentKey(row){
+  const normalize=value=>value.normalize('NFKC').trim().replace(/\s+/g,' ').toLocaleLowerCase('id');
+  return JSON.stringify([normalize(row.reference),normalize(row.activity)]);
+}
+function assignmentHue(key){
+  let hash=2166136261;
+  for(const char of key)hash=Math.imul(hash^char.codePointAt(0),16777619);
+  return (hash>>>0)%3600/10;
+}
+function markAssignment(element,group){
+  element.style.setProperty('--duty-edge',`hsl(${group.hue}, 68%, 30%)`);
+  element.style.setProperty('--duty-bg',`hsl(${group.hue}, 73%, 84%)`);
   element.classList.add('assignmentColor');
+}
+function groupAssignments(days){
+  const groups=new Map();
+  for(const row of days){
+    const key=assignmentKey(row);
+    if(!groups.has(key))groups.set(key,{days:[],hue:assignmentHue(key)});
+    groups.get(key).days.push(row);
+  }
+  return groups;
+}
+function historyGroup(group){
+  const first=group.days[0];
+  const details=node('details','','claimGroup');
+  const summary=node('summary','');
+  markAssignment(summary,group);
+  const title=node('span','','claimTitle');
+  title.append(node('strong',first.activity),node('small',first.reference));
+  const total=group.days.reduce((sum,r)=>sum+totalCost(r),0);
+  summary.append(title,node('span',group.days.length+' hari · '+money(total),'groupTotal'));
+  details.append(summary);
+  const scroll=node('div','','scroll');
+  const table=node('table',''),header=table.createTHead().insertRow();
+  for(const label of ['Tanggal','Tujuan','Jenis dinas','Status','Uang harian','Transport','Biaya lainnya','Total']){
+    const th=node('th',label); th.scope='col';header.append(th);
+  }
+  const tbody=table.createTBody();
+  for(const r of group.days){
+    const tr=tbody.insertRow(),button=node('button',localDate(r.day));
+    button.onclick=()=>openDay(r.day,r);
+    tr.insertCell().append(button);
+    for(const value of [r.destination,r.kind,r.status,money(r.amount),money(r.transport),money(r.other)+(r.detail?' · '+r.detail:''),money(totalCost(r))]){
+      tr.insertCell().textContent=value;
+    }
+  }
+  scroll.append(table);details.append(scroll);
+  return details;
 }
 function render(){
   $('month').value=month;
@@ -50,13 +92,12 @@ function render(){
   else $('source').textContent='Data libur nasional dan cuti bersama tahun ini belum tersedia.';
   const legend=$('assignments');
   legend.replaceChildren();legend.hidden=!rows.length;
-  const seen=new Set();
-  for(const row of rows){
-    if(seen.has(row.colorId))continue;
-    seen.add(row.colorId);
+  const groups=groupAssignments(rows);
+  for(const group of groups.values()){
+    const row=group.days[0];
     const item=node('li','');
-    markAssignment(item,row);
-    item.append(node('strong','#'+row.colorId+' · '+row.reference),node('span',row.activity));
+    markAssignment(item,group);
+    item.append(node('strong',row.activity),node('span',row.reference));
     legend.append(item);
   }
   const grid=$('grid'); grid.replaceChildren();
@@ -68,9 +109,9 @@ function render(){
     if(day===today)b.setAttribute('aria-current','date');
     if(holiday)b.append(node('small',holiday.name));
     if(row){
-      markAssignment(b,row);
+      markAssignment(b,groups.get(assignmentKey(row)));
       b.title=row.reference+' · '+row.activity;
-      b.append(node('small','#'+row.colorId+' · '+row.activity,'taskName'),node('small',row.kind),node('small',row.status,'statusLabel '+statusClass[row.status]));
+      b.append(node('small',row.activity,'taskName'),node('small',row.kind),node('small',row.status,'statusLabel '+statusClass[row.status]));
       if(holiday)b.querySelector('small').classList.add(appearance);
     }
     b.setAttribute('aria-label',[day,holiday?.category,holiday?.name,row?.reference,row?.activity,row?.status].filter(Boolean).join(', '));
@@ -83,13 +124,9 @@ function render(){
     const card=node('div',status+' · '+items.length+' hari');
     card.append(node('strong',money(items.reduce((sum,r)=>sum+totalCost(r),0))));$('totals').append(card);
   }
-  for(const r of rows){
-    const tr=node('tr',''),td=node('td',''),b=node('button',r.day);
-    markAssignment(b,r);b.title=r.reference+' · '+r.activity;b.onclick=()=>openDay(r.day,r);td.append(b);tr.append(td);
-    for(const value of [r.reference+' · '+r.activity,r.destination,r.kind,r.status,money(r.amount),money(r.transport),money(r.other)+(r.detail?' · '+r.detail:''),money(totalCost(r))])tr.append(node('td',value));
-    $('list').append(tr);
-  }
-  if(!rows.length){const tr=node('tr',''),td=node('td','Belum ada penugasan bulan ini. Pilih tanggal untuk mencatat.');td.colSpan=9;tr.append(td);$('list').append(tr);}
+  for(const group of groups.values())$('list').append(historyGroup(group));
+  if(!groups.size)$('list').append(node('p','Belum ada penugasan bulan ini. Pilih tanggal untuk mencatat.'));
+
 }
 function openDay(day,row){
   current=row||null;lastPayload='';requestKey='';form.reset();

@@ -57,7 +57,7 @@ async function route(req,env){
  if(!s){if(p.startsWith('/api/'))fail('Sesi berakhir. Silakan masuk kembali.',401);return Response.redirect(u.origin+'/login',302)}
  if(p==='/api/duties'){
   try{return json(await duties(req,env.DB,body))}
-  catch(e){if(/no such table: duty_days/i.test(e.message))fail('Kalender belum aktif. Jalankan migrations/0002_penugasan.sql di D1 Console.',503);throw e}
+  catch(e){if(/no such table: duty_submissions|no such column: (transport|other|detail)|has no column named (transport|other|detail)/i.test(e.message))fail('Jalankan migrations/0003_biaya_penugasan.sql pada D1 kalender.',503);if(/no such table: duty_days/i.test(e.message))fail('Kalender belum aktif. Jalankan migrations/0002_penugasan.sql di D1 Console.',503);throw e}
  }
  if(p==='/api/session'&&req.method==='GET')return json({username:env.AUTH_USERNAME});
  if(p==='/api/logout'&&req.method==='POST'){

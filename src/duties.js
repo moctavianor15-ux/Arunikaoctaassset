@@ -14,7 +14,7 @@ export async function duties(req,db,readBody) {
   if (req.method === 'GET') {
     const month = url.searchParams.get('month');
     if (!monthPattern.test(month)) bad('Bulan tidak valid.');
-    const rows = await db.prepare('SELECT * FROM duty_days WHERE day BETWEEN ? AND ? ORDER BY day').bind(month+'-01',month+'-31').all();
+    const rows = await db.prepare('SELECT day,reference,activity,destination,kind,status,amount,transport,other,detail,version FROM duty_days WHERE day BETWEEN ? AND ? ORDER BY day').bind(month+'-01',month+'-31').all();
     return {days:rows.results};
   }
   if (!['POST','PUT','DELETE'].includes(req.method)) bad('Metode tidak tersedia.',405);
@@ -26,25 +26,45 @@ export async function duties(req,db,readBody) {
     if (!r.meta.changes) bad('Catatan berubah. Muat ulang kalender sebelum melanjutkan.',409);
     return {ok:true};
   }
-  const {kind,status,amount} = data;
+  const {kind,status,amount,transport=0,other=0} = data;
+  const detail=typeof data.detail==='string'?data.detail.trim():'';
+  if (detail.length>160 || (other>0 && !detail)) bad('Isi keterangan biaya lainnya (maksimal 160 karakter).');
   if (!['Dalam daerah','Luar daerah'].includes(kind) || !['Tanpa klaim','Draf','Diajukan','Dibayar'].includes(status)) bad('Jenis tugas atau status tidak valid.');
-  if (!Number.isSafeInteger(amount) || amount<0 || amount>999999999 || (status==='Tanpa klaim' ? amount!==0 : amount===0)) bad('Periksa nominal uang harian.');
-  const values = [field(data.reference,100),field(data.activity,200),field(data.destination,150),kind,status,amount,crypto.randomUUID()];
+  const costs=[amount,transport,other];
+  if (costs.some(n=>!Number.isSafeInteger(n)||n<0||n>999999999)) bad('Periksa nominal biaya per tanggal.');
+  const total=amount+transport+other;
+  if ((status==='Tanpa klaim') !== (total===0)) bad('Untuk mencatat biaya, pilih status klaim dan isi sedikitnya satu nominal.');
+  const values=[field(data.reference,100),field(data.activity,200),field(data.destination,150),kind,status,...costs,detail];
   if (req.method === 'PUT') {
-    const r = await db.prepare('UPDATE duty_days SET reference=?,activity=?,destination=?,kind=?,status=?,amount=?,version=? WHERE day=? AND version=?').bind(...values,data.day,data.version).run();
+    if (!Object.hasOwn(data,'transport') || !Object.hasOwn(data,'other')) bad('Muat ulang halaman untuk memakai formulir biaya terbaru.',409);
+    const r=await db.prepare('UPDATE duty_days SET reference=?,activity=?,destination=?,kind=?,status=?,amount=?,transport=?,other=?,detail=?,version=? WHERE day=? AND version=?').bind(...values,crypto.randomUUID(),data.day,data.version).run();
     if (!r.meta.changes) bad('Catatan berubah. Muat ulang kalender sebelum melanjutkan.',409);
   } else {
     const start=dateValue(data.day), end=dateValue(data.end);
     if (!Number.isFinite(end) || end<start || end-start>30*86400000) bad('Pilih rentang 1 sampai 31 hari.');
-    const statements=[];
-    for (let t=start;t<=end;t+=86400000) {
-      const day=new Date(t).toISOString().slice(0,10);
-      statements.push(db.prepare('INSERT INTO duty_days (day,reference,activity,destination,kind,status,amount,version) VALUES (?,?,?,?,?,?,?,?)').bind(day,...values));
-    }
-    try { await db.batch(statements); } catch (e) {
-      if (/UNIQUE constraint failed: duty_days.day/i.test(e.message)) bad('Rentang bertabrakan dengan tanggal yang sudah tercatat. Pilih rentang lain atau ubah catatan pada tanggal tersebut.',409);
-      throw e;
-    }
+    if(typeof data.requestId!=='string' || !/^[a-f0-9-]{36}$/i.test(data.requestId)) bad('Muat ulang halaman untuk memakai kalender terbaru.');
+    const count=(end-start)/86400000+1;
+    const attempt=crypto.randomUUID();
+    const fingerprint=JSON.stringify([data.day,data.end,...values]);
+    // D1 serializes the allocation and inserts in one transaction. A retry
+    // reads its existing receipt even if the original dates were later edited.
+    await db.batch([
+      db.prepare(`WITH RECURSIVE calendar(day) AS (
+        SELECT ? UNION ALL SELECT date(day,'+1 day') FROM calendar WHERE day<'2099-12-31'
+      ), available AS (
+        SELECT day FROM calendar WHERE NOT EXISTS (SELECT 1 FROM duty_days d WHERE d.day=calendar.day) LIMIT ?
+      )
+      INSERT OR IGNORE INTO duty_submissions(request_id,fingerprint,attempt,days)
+      SELECT ?,?,?,json_group_array(day) FROM (SELECT day FROM available ORDER BY day) HAVING count(*)=?`)
+        .bind(data.day,count,data.requestId,fingerprint,attempt,count),
+      db.prepare(`INSERT INTO duty_days(day,reference,activity,destination,kind,status,amount,transport,other,detail,version)
+        SELECT dates.value,?,?,?,?,?,?,?,?,?,? FROM duty_submissions s,json_each(s.days) dates
+        WHERE s.request_id=? AND s.attempt=?`).bind(...values,attempt,data.requestId,attempt)
+    ]);
+    const receipt=await db.prepare('SELECT fingerprint,days FROM duty_submissions WHERE request_id=?').bind(data.requestId).first();
+    if(!receipt) bad('Sisa tanggal kosong sampai Desember 2099 tidak cukup untuk durasi ini.');
+    if(receipt.fingerprint!==fingerprint) bad('Permintaan sudah diproses dengan isian berbeda. Buka kembali formulir.',409);
+    return {ok:true,days:JSON.parse(receipt.days)};
   }
   return {ok:true};
 }

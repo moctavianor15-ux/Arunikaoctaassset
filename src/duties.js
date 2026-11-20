@@ -14,7 +14,10 @@ export async function duties(req,db,readBody) {
   if (req.method === 'GET') {
     const month = url.searchParams.get('month');
     if (!monthPattern.test(month)) bad('Bulan tidak valid.');
-    const rows = await db.prepare('SELECT day,reference,activity,destination,kind,status,amount,transport,other,detail,version FROM duty_days WHERE day BETWEEN ? AND ? ORDER BY day').bind(month+'-01',month+'-31').all();
+    const rows = await db.prepare( `SELECT d.*, c.id AS colorId
+      FROM duty_days d JOIN duty_colors c
+      ON c.ref_key=lower(trim(d.reference)) AND c.activity_key=lower(trim(d.activity))
+      WHERE d.day BETWEEN ? AND ? ORDER BY d.day`).bind(month+'-01',month+'-31').all();
     return {days:rows.results};
   }
   if (!['POST','PUT','DELETE'].includes(req.method)) bad('Metode tidak tersedia.',405);

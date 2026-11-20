@@ -1,0 +1,16 @@
+<!doctype html>
+<html lang="id"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Kalender penugasan · Arunika</title><link rel="icon" href="/favicon.ico"><link rel="stylesheet" href="/penugasan.css"><script type="module" src="/penugasan.js"></script></head>
+<body><header><div><a href="/"><img src="/logo-arunika.webp" width="132" alt="Arunika"></a><a href="/">Kembali ke ringkasan</a></div></header>
+<main><h1>Kalender penugasan</h1><p>Catat surat tugas dan pantau klaim uang harian per tanggal.</p>
+<section class="panel"><div class="toolbar"><h2 id="heading">Kalender bulanan</h2><div class="controls"><button id="prev" aria-label="Bulan sebelumnya">‹</button><input id="month" type="month" min="2000-01" max="2099-12" aria-label="Pilih bulan"><button id="next" aria-label="Bulan berikutnya">›</button><button id="today">Hari ini</button></div></div>
+<div class="grid weekdays"><span>Sen</span><span>Sel</span><span>Rab</span><span>Kam</span><span>Jum</span><span>Sab</span><span>Min</span></div><div id="grid" class="grid"></div>
+<p class="legend"><b class="national">Libur nasional</b><b class="leave">Cuti bersama</b><b class="weekend">Akhir pekan</b><b class="duty">Penugasan</b></p><p id="source"></p>
+<p id="notice" role="status"></p><button id="reload" hidden>Muat ulang kalender</button></section>
+<section class="panel"><h2>Rekap uang harian bulan ini</h2><div id="totals"></div><div class="scroll"><table><thead><tr><th>Tanggal</th><th>Surat tugas / kegiatan</th><th>Tujuan</th><th>Jenis dinas</th><th>Status</th><th>Uang harian</th></tr></thead><tbody id="list"></tbody></table></div></section>
+</main><dialog id="editor"><form id="entry"><div class="toolbar"><h2 id="title">Catat penugasan</h2><button type="button" id="close" aria-label="Tutup">×</button></div>
+<label>Tanggal mulai<input type="date" name="day" required></label><label id="endLabel">Tanggal selesai (termasuk)<input type="date" name="end" required></label>
+<p id="special"></p><label>Nomor surat tugas<input required name="reference" maxlength="100"></label><label>Kegiatan penugasan<input required name="activity" maxlength="200"></label><label>Lokasi tujuan / OPD<input required name="destination" maxlength="150"></label>
+<label>Jenis dinas<select name="kind"><option>Dalam daerah</option><option>Luar daerah</option></select></label>
+<label>Status uang harian<select name="status"><option>Tanpa klaim</option><option>Draf</option><option>Diajukan</option><option>Dibayar</option></select></label>
+<label>Uang harian per tanggal (Rp)<input type="number" name="amount" step="1" min="0" max="999999999" required></label>
+<p id="estimate"></p><p id="error" role="alert"></p><div class="controls"><button type="submit" class="save">Simpan</button><button type="button" id="remove">Hapus tanggal ini</button></div></form></dialog></body></html>

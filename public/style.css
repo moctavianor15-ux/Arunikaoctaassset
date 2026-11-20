@@ -132,3 +132,5 @@
 .cashInsight p{margin:10px 0;font-size:14px}.cashShareBar{height:6px;border-radius:8px;background:#eef2ee;display:flex;overflow:hidden}
 .cashShareBar i{background:#40805d}.cashShareBar b{background:#bf715c}
 .insightAverage{border-top:1px solid #e1e9e5;padding-top:8px}
+
+@media (max-width:800px){.bar nav{flex-wrap:wrap}}

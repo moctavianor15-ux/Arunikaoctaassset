@@ -33,6 +33,21 @@ function claims(data,allowedDays){
   if(!Number.isSafeInteger(extra))bad('Total rincian biaya melebihi batas.');
   return {transport,expenses,lodging,extra};
 }
+function dailySelection(data,allowedDays){
+  // Kompatibel dengan klien lama yang masih mengirim satu nominal uang harian.
+  if(data.dailyRates===undefined)return allowedDays.map(date=>({date,amount:number(data.amount,'uang harian')})).filter(x=>x.amount>0);
+  if(!Array.isArray(data.dailyRates)||data.dailyRates.length>31)bad('Maksimal 31 tanggal uang harian.');
+  const allowed=new Set(allowedDays),seen=new Set();
+  return data.dailyRates.map(item=>{
+    if(!item||!Number.isFinite(dateValue(item.date))||!allowed.has(item.date))bad('Tanggal uang harian harus termasuk tanggal penugasan.');
+    if(seen.has(item.date))bad('Tanggal uang harian tidak boleh ganda.');
+    seen.add(item.date);
+    const amount=number(item.amount,'uang harian per tanggal');
+    if(!amount)bad('Setiap tanggal uang harian yang dicentang harus memiliki nominal lebih dari nol.');
+    return {date:item.date,amount};
+  }).sort((a,b)=>a.date.localeCompare(b.date));
+}
+function totalDaily(daily){return daily.reduce((sum,item)=>sum+item.amount,0);}
 function details(data){
   const {kind,status,amount}=data;
   if (!['Dalam daerah','Luar daerah'].includes(kind) || !['Tanpa klaim','Draf','Diajukan','Dibayar'].includes(status))bad('Jenis dinas atau status klaim tidak valid.');
@@ -48,7 +63,7 @@ export async function duties(req,db,readBody) {
     const [days,costs,assignmentDays]=await Promise.all([
       db.prepare(`SELECT d.*, c.id AS colorId FROM duty_days d JOIN duty_colors c ON c.ref_key=lower(trim(d.reference)) AND c.activity_key=lower(trim(d.activity)) WHERE d.day BETWEEN ? AND ? ORDER BY d.day`).bind(start,end).all(),
       db.prepare(`SELECT * FROM duty_costs WHERE assignment_id IN (${q})`).bind(start,end).all(),
-      db.prepare(`SELECT assignment_id,day FROM duty_days WHERE assignment_id IN (${q}) ORDER BY day`).bind(start,end).all()
+      db.prepare(`SELECT assignment_id,day,amount,status,version FROM duty_days WHERE assignment_id IN (${q}) ORDER BY day`).bind(start,end).all()
     ]);
     return {days:days.results,costs:costs.results.map(row=>({...row,expenses:JSON.parse(row.expenses),lodging:JSON.parse(row.lodging)})),assignmentDays:assignmentDays.results};
   }
@@ -72,25 +87,63 @@ export async function duties(req,db,readBody) {
   const {values}=details(data);
   if(req.method==='PUT'){
     const row=await db.prepare('SELECT assignment_id FROM duty_days WHERE day=? AND version=?').bind(data.day,data.version).first();
-    if(!row)bad('Catatan berubah. Muat ulang kalender.',409);
+    if(!row)bad('Catatan sudah berubah. Muat ulang kalender.',409);
     if(typeof data.costVersion!=='string')bad('Versi biaya penugasan diperlukan.',409);
-    const full=await db.prepare('SELECT day FROM duty_days WHERE assignment_id=? ORDER BY day').bind(row.assignment_id).all();
-    const costs=claims(data,full.results.map(r=>r.day));
-    if(data.status==='Tanpa klaim' && data.amount!==0)bad('Uang harian harus nol jika status tanggal ini Tanpa klaim.');
-    if(data.status!=='Tanpa klaim' && data.amount+costs.extra===0)bad('Isi sedikitnya satu biaya klaim.');
+    const full=(await db.prepare('SELECT * FROM duty_days WHERE assignment_id=? ORDER BY day').bind(row.assignment_id).all()).results;
+    const costs=claims(data,full.map(r=>r.day));
+    const isGroup=Array.isArray(data.dailyRates);
+    const daily=isGroup?dailySelection(data,full.map(r=>r.day)):[];
+    const selected=new Map(daily.map(x=>[x.date,x.amount]));
+    const clickedAmount=isGroup?(selected.get(data.day)||0):data.amount;
+    if(isGroup&&data.amount!==clickedAmount)bad('Nominal tanggal yang dibuka tidak sesuai rincian uang harian.');
+    if(data.status==='Tanpa klaim' && clickedAmount!==0)bad('Uang harian tanggal ini harus nol jika statusnya Tanpa klaim.');
+    if(data.status!=='Tanpa klaim' && (isGroup?totalDaily(daily):data.amount)+costs.extra===0)bad('Isi sedikitnya satu biaya klaim.');
     const next=crypto.randomUUID();
-    // Kedua UPDATE saling tergantung dalam batch transaksional D1:
-    // catatan biaya harus berhasil terlebih dulu sebelum baris tanggal diubah.
+    if(!isGroup){
+      // Pertahankan endpoint edit lama untuk klien yang belum memperbarui browser.
+      const changes=await db.batch([
+        db.prepare(`UPDATE duty_costs SET transport=?,expenses=?,lodging=?,version=?
+          WHERE assignment_id=? AND version=? AND EXISTS(SELECT 1 FROM duty_days WHERE day=? AND version=? AND assignment_id=?)`)
+          .bind(costs.transport,JSON.stringify(costs.expenses),JSON.stringify(costs.lodging),next,row.assignment_id,data.costVersion,data.day,data.version,row.assignment_id),
+        db.prepare(`UPDATE duty_days SET reference=?,activity=?,destination=?,kind=?,status=?,amount=?,transport=0,other=0,detail='',version=?
+          WHERE day=? AND version=? AND assignment_id=?
+          AND EXISTS(SELECT 1 FROM duty_costs WHERE assignment_id=? AND version=?)`)
+          .bind(...values,next,data.day,data.version,row.assignment_id,row.assignment_id,next)
+      ]);
+      if(!changes[0].meta.changes||!changes[1].meta.changes)bad('Data penugasan diubah dari perangkat lain. Muat ulang terlebih dahulu.',409);
+      return {ok:true};
+    }
+    // Seluruh uang harian dapat disunting sekaligus, termasuk tanggal lintas bulan.
+    // Cocokkan versi SETIAP tanggal sehingga penyuntingan serentak tidak menimpa data orang lain.
+    if(!Array.isArray(data.dailyVersions)||data.dailyVersions.length!==full.length)bad('Versi seluruh tanggal penugasan belum lengkap. Muat ulang kalender.',409);
+    const expected=new Map();
+    for(const item of data.dailyVersions){
+      if(!item||typeof item.date!=='string'||typeof item.version!=='string'||expected.has(item.date))bad('Versi tanggal penugasan tidak valid.',409);
+      expected.set(item.date,item.version);
+    }
+    if(full.some(r=>expected.get(r.day)!==r.version))bad('Ada tanggal penugasan yang berubah. Muat ulang kalender.',409);
+    const versionList=JSON.stringify(data.dailyVersions);
     const changes=await db.batch([
       db.prepare(`UPDATE duty_costs SET transport=?,expenses=?,lodging=?,version=?
-        WHERE assignment_id=? AND version=? AND EXISTS(SELECT 1 FROM duty_days WHERE day=? AND version=? AND assignment_id=?)`)
-        .bind(costs.transport,JSON.stringify(costs.expenses),JSON.stringify(costs.lodging),next,row.assignment_id,data.costVersion,data.day,data.version,row.assignment_id),
-      db.prepare(`UPDATE duty_days SET reference=?,activity=?,destination=?,kind=?,status=?,amount=?,transport=0,other=0,detail='',version=?
-        WHERE day=? AND version=? AND assignment_id=?
-        AND EXISTS(SELECT 1 FROM duty_costs WHERE assignment_id=? AND version=?)`)
-        .bind(...values,next,data.day,data.version,row.assignment_id,row.assignment_id,next)
+        WHERE assignment_id=? AND version=? AND EXISTS(SELECT 1 FROM duty_days WHERE day=? AND version=? AND assignment_id=?)
+        AND (SELECT COUNT(*) FROM duty_days WHERE assignment_id=?)=?
+        AND NOT EXISTS(SELECT 1 FROM duty_days d WHERE d.assignment_id=? AND NOT EXISTS(
+          SELECT 1 FROM json_each(?) j WHERE json_extract(j.value,'$.date')=d.day AND json_extract(j.value,'$.version')=d.version
+        ))`)
+        .bind(costs.transport,JSON.stringify(costs.expenses),JSON.stringify(costs.lodging),next,
+          row.assignment_id,data.costVersion,data.day,data.version,row.assignment_id,row.assignment_id,full.length,row.assignment_id,versionList),
+      ...full.map(old=>{
+        const isClicked=old.day===data.day;
+        const amount=selected.get(old.day)||0;
+        // Memperbolehkan penambahan uang harian pada tanggal lama yang awalnya Tanpa klaim.
+        const status=isClicked?data.status:old.status==='Tanpa klaim'&&amount>0?(data.status==='Tanpa klaim'?'Draf':data.status):old.status;
+        return db.prepare(`UPDATE duty_days SET reference=?,activity=?,destination=?,kind=?,status=?,amount=?,transport=0,other=0,detail='',version=?
+          WHERE day=? AND version=? AND assignment_id=? AND EXISTS(SELECT 1 FROM duty_costs WHERE assignment_id=? AND version=?)`)
+          .bind(isClicked?values[0]:old.reference,isClicked?values[1]:old.activity,isClicked?values[2]:old.destination,isClicked?values[3]:old.kind,
+            status,amount,next,old.day,old.version,row.assignment_id,row.assignment_id,next);
+      })
     ]);
-    if(!changes[0].meta.changes||!changes[1].meta.changes)bad('Data penugasan diubah dari perangkat lain. Muat ulang terlebih dahulu.',409);
+    if(changes[0].meta.changes!==1||changes.slice(1).some(x=>x.meta.changes!==1))bad('Data penugasan berubah saat disimpan. Muat ulang kalender.',409);
     return {ok:true};
   }
   const start=dateValue(data.day), end=dateValue(data.end);
@@ -99,11 +152,12 @@ export async function duties(req,db,readBody) {
   const count=(end-start)/dayMs+1;
   const allowed=Array.from({length:count},(_,i)=>new Date(start+i*dayMs).toISOString().slice(0,10));
   const costs=claims(data,allowed);
-  if((data.status==='Tanpa klaim') !== (data.amount+costs.extra===0))bad('Pilih status klaim dan isi nominal, atau Tanpa klaim dengan seluruh biaya nol.');
-  // Tetap memakai perilaku lama: tanggal terpakai dilewati dan rentang hari digeser.
-  // Penginapan tidak boleh berada pada tanggal yang akhirnya terlewati.
+  const daily=dailySelection(data,allowed);
+  if((data.status==='Tanpa klaim') !== (totalDaily(daily)+costs.extra===0))bad('Pilih status klaim dan isi nominal, atau Tanpa klaim dengan seluruh biaya nol.');
+  // Pilihan tanggal uang harian V6 tidak boleh bergeser diam-diam. Untuk klien V5 lama,
+  // perilaku tanggal terisi dilewati tetap dipertahankan selama tidak ada malam bertabrakan.
   const assignmentId=crypto.randomUUID(), attempt=crypto.randomUUID();
-  const fingerprint=JSON.stringify([data.day,data.end,...values,costs]);
+  const fingerprint=JSON.stringify([data.day,data.end,...values,costs,daily]);
   await db.batch([
     db.prepare(`WITH RECURSIVE calendar(day) AS (
       SELECT ? UNION ALL SELECT date(day,'+1 day') FROM calendar WHERE day<'2099-12-31'
@@ -112,17 +166,20 @@ export async function duties(req,db,readBody) {
     )
     INSERT OR IGNORE INTO duty_submissions(request_id,fingerprint,attempt,days)
     SELECT ?,?,?,json_group_array(day) FROM (SELECT day FROM available ORDER BY day)
-    HAVING count(*)=? AND NOT EXISTS (SELECT 1 FROM duty_days WHERE day IN (SELECT value FROM json_each(?)))`)
-      .bind(data.day,count,data.requestId,fingerprint,attempt,count,JSON.stringify(costs.lodging.map(x=>x.date))),
+    HAVING count(*)=? AND NOT EXISTS (SELECT 1 FROM duty_days WHERE day IN (SELECT value FROM json_each(?)))
+    AND NOT EXISTS (SELECT 1 FROM json_each(?) expected WHERE expected.value NOT IN (SELECT day FROM available))`)
+      .bind(data.day,count,data.requestId,fingerprint,attempt,count,
+        JSON.stringify(costs.lodging.map(x=>x.date)),JSON.stringify(data.dailyRates===undefined?[]:allowed)),
     db.prepare(`INSERT INTO duty_days(day,reference,activity,destination,kind,status,amount,transport,other,detail,version,assignment_id)
-      SELECT dates.value,?,?,?,?,?,?,0,0,'',?,? FROM duty_submissions s,json_each(s.days) dates
-      WHERE s.request_id=? AND s.attempt=?`).bind(...values,attempt,assignmentId,data.requestId,attempt),
+      SELECT dates.value,?,?,?,?,?,COALESCE((SELECT json_extract(r.value,'$.amount') FROM json_each(?) r WHERE json_extract(r.value,'$.date')=dates.value),0),0,0,'',?,?
+      FROM duty_submissions s,json_each(s.days) dates WHERE s.request_id=? AND s.attempt=?`)
+        .bind(...values.slice(0,5),JSON.stringify(daily),attempt,assignmentId,data.requestId,attempt),
     db.prepare(`INSERT INTO duty_costs(assignment_id,transport,expenses,lodging,charge_day,version)
       SELECT ?,?,?,?,?,? WHERE EXISTS (SELECT 1 FROM duty_submissions WHERE request_id=? AND attempt=?)`)
       .bind(assignmentId,costs.transport,JSON.stringify(costs.expenses),JSON.stringify(costs.lodging),data.day,attempt,data.requestId,attempt)
   ]);
   const receipt=await db.prepare('SELECT fingerprint,days FROM duty_submissions WHERE request_id=?').bind(data.requestId).first();
-  if(!receipt)bad('Tanggal penugasan atau malam penginapan yang dipilih sudah terisi, atau durasi tidak tersedia. Ubah tanggal dan simpan lagi.',409);
+  if(!receipt)bad('Ada tanggal penugasan yang sudah terisi atau rentang tidak tersedia. Tanggal uang harian dan penginapan tidak digeser otomatis. Pilih rentang kosong lalu simpan kembali.',409);
   if(receipt.fingerprint!==fingerprint)bad('Permintaan sudah diproses dengan isian berbeda. Buka kembali formulir.',409);
   const insertedDays=JSON.parse(receipt.days);
   return {ok:true,days:insertedDays};

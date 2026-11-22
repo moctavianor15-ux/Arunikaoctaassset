@@ -85,3 +85,20 @@ dialog{width:min(720px,96vw);max-height:92vh;padding:0;overflow:auto;box-shadow:
 #remove{color:#974741;background:#fff7f5;border-color:#f0ccc5}
 @media(max-width:650px){.fieldGrid,.nights{grid-template-columns:1fr}.expenseLine{grid-template-columns:1fr auto;gap:5px}.expenseLine label:first-child{grid-column:1/-1}.expenseLine label:nth-child(2){grid-column:1}.expenseLine .removeExpense{grid-column:2}.estimateLine{grid-template-columns:1fr auto}.estimateLine small{display:none}.estimateGrand strong:last-child{font-size:18px}}
 @media(prefers-reduced-motion:no-preference){.panel,.claimGroup,.nightLine{transition:box-shadow .18s ease,background-color .18s ease,border-color .18s ease}.claimGroup:hover{box-shadow:0 5px 18px #143d2f14}.cell:hover{transform:translateY(-1px);transition:transform .15s ease}}
+
+/* V6 — tanggal uang harian yang benar-benar dipilih, mengikuti pilihan malam menginap. */
+.dailyToolbar{display:flex;flex-wrap:wrap;align-items:center;gap:7px;margin:9px 0 12px}
+.dailyToolbar .subtleButton{font-size:12px;padding:7px 9px}
+.dailyOverview{display:flex;align-items:center;justify-content:space-between;gap:10px;background:linear-gradient(105deg,#e7f4ed,#e5f1f2);border:1px solid #c5e3d4;border-radius:11px;padding:10px 13px;font-size:13px;color:#2c614d}
+.dailyOverview strong{font-size:17px;color:#1c664a;font-variant-numeric:tabular-nums}
+.dailyDates{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin:12px 0}
+.dayRateLine{display:flex;justify-content:space-between;align-items:center;gap:8px;min-width:0;border:1px solid #d8e5de;background:#f8faf9;border-radius:10px;padding:9px 10px}
+#editor .dayRateToggle{display:flex;align-items:center;flex-wrap:wrap;gap:6px;flex:1;min-width:0;margin:0;cursor:pointer;font-size:12px;font-weight:650}
+#editor .dayRateCheck{flex:0 0 auto;width:17px;height:17px;min-height:17px;accent-color:#28754d}
+#editor .dayRateAmount{width:min(120px,44%);min-width:85px;text-align:right;font-size:13px}
+.dayRateLine.isSelected{background:#e9f7ee;border-color:#64ae82;box-shadow:inset 3px 0 #4d9c6c}
+.dayRatePill{color:#718277;font-size:10px;white-space:nowrap}
+.dayRateLine.isSelected .dayRatePill{color:#28734f}
+.dayRateLine input:disabled{color:#73847c;background:#eff3f0}
+@media(max-width:650px){.dailyDates{grid-template-columns:1fr}.dayRateLine{padding:10px 12px}.dailyOverview{flex-wrap:wrap}}
+@media(prefers-reduced-motion:no-preference){.dayRateLine{transition:background .16s ease,border-color .16s ease,box-shadow .16s ease}}

@@ -89,3 +89,64 @@ test('rentang penugasan lintas bulan menyimpan satu biaya transport dan rincian 
   assert.equal(march.costs[0].assignment_id,april.costs[0].assignment_id);
   assert.equal(march.costs[0].transport,200000);
 });
+test('V6: hanya tanggal uang harian yang dicentang dibayar, transport sekali, penginapan per malam',async()=>{
+  const {request,database}=setup();
+  const inp=make({day:'2026-03-10',end:'2026-03-13',dailyRates:[{date:'2026-03-10',amount:530000},{date:'2026-03-12',amount:650000}],lodging:[{date:'2026-03-11',amount:450000}]});
+  assert.deepEqual((await request('POST',inp)).days,['2026-03-10','2026-03-11','2026-03-12','2026-03-13']);
+  const data=await request('GET');
+  assert.deepEqual(data.days.map(r=>r.amount),[530000,0,650000,0]);
+  assert.equal(data.days.reduce((s,x)=>s+x.amount,0),1180000);
+  assert.equal(data.costs[0].transport,200000);
+  assert.equal(data.costs[0].lodging.length,1);
+  assert.deepEqual(data.assignmentDays.map(x=>x.amount),[530000,0,650000,0]);
+  assert.equal(database.prepare('SELECT SUM(amount) AS s FROM duty_days').get().s,1180000);
+});
+test('V6: pilihan tanggal dapat diubah sekaligus saat edit tanpa menghapus penginapan dan transport',async()=>{
+  const {request}=setup();
+  await request('POST',make({day:'2026-03-10',end:'2026-03-12',dailyRates:[{date:'2026-03-10',amount:530000}],lodging:[{date:'2026-03-11',amount:450000}]}));
+  let data=await request('GET');
+  const clicked=data.days[0],claim=data.costs[0];
+  const edited=make({day:clicked.day,end:'2026-03-12',version:clicked.version,costVersion:claim.version,
+    dailyVersions:data.assignmentDays.map(r=>({date:r.day,version:r.version})),dailyRates:[{date:'2026-03-11',amount:620000},{date:'2026-03-12',amount:530000}],
+    amount:0,transport:claim.transport,expenses:claim.expenses,lodging:claim.lodging});
+  await request('PUT',edited);
+  data=await request('GET');
+  assert.deepEqual(data.days.map(x=>x.amount),[0,620000,530000]);
+  assert.equal(data.costs[0].transport,200000);
+  assert.deepEqual(data.costs[0].lodging,[{date:'2026-03-11',amount:450000}]);
+  assert.equal(data.days[0].status,'Draf');
+  await assert.rejects(request('PUT',edited),e=>e.status===409);
+});
+test('V6: edit uang harian penugasan lintas bulan tidak melewatkan hari di bulan lain',async()=>{
+  const {request}=setup();
+  await request('POST',make({day:'2026-03-31',end:'2026-04-02',dailyRates:[{date:'2026-04-01',amount:530000}],lodging:[{date:'2026-03-31',amount:100000}]}));
+  const march=await request('GET');
+  assert.equal(march.assignmentDays.length,3);
+  assert.deepEqual(march.assignmentDays.map(r=>r.day),['2026-03-31','2026-04-01','2026-04-02']);
+  const clicked=march.days[0],claim=march.costs[0];
+  await request('PUT',make({day:clicked.day,end:'2026-04-02',version:clicked.version,costVersion:claim.version,
+    dailyVersions:march.assignmentDays.map(r=>({date:r.day,version:r.version})),dailyRates:[{date:'2026-03-31',amount:600000},{date:'2026-04-02',amount:710000}],
+    amount:600000,transport:claim.transport,expenses:claim.expenses,lodging:claim.lodging}));
+  const march2=await request('GET'),april=await request('GET',undefined,'2026-04');
+  assert.deepEqual(march2.days.map(x=>x.amount),[600000]);
+  assert.deepEqual(april.days.map(x=>x.amount),[0,710000]);
+});
+test('V6: menolak pilihan uang harian ganda, tanggal di luar rentang, nominal nol, dan penugasan bentrok',async()=>{
+  const {request,database}=setup();
+  const invalid=[
+    [{date:'2026-03-04',amount:0}],
+    [{date:'2026-03-07',amount:100000}],
+    [{date:'2026-03-04',amount:100000},{date:'2026-03-04',amount:200000}],
+    [{date:'2026-03-05',amount:-1}]
+  ];
+  for(const dailyRates of invalid)await assert.rejects(request('POST',make({dailyRates})),e=>e.status===400);
+  assert.equal(database.prepare('SELECT COUNT(*) AS n FROM duty_days').get().n,0);
+  await request('POST',make({day:'2026-03-04',end:'2026-03-04',dailyRates:[{date:'2026-03-04',amount:100000}],lodging:[]}));
+  await assert.rejects(request('POST',make({day:'2026-03-03',end:'2026-03-05',dailyRates:[{date:'2026-03-03',amount:100000}],lodging:[]})),e=>e.status===409);
+  assert.equal(database.prepare('SELECT COUNT(*) AS n FROM duty_days').get().n,1);
+});
+test('V6: tidak memilih uang harian boleh jika masih ada transport atau biaya lainnya',async()=>{
+  const {request}=setup();await request('POST',make({dailyRates:[],amount:0,lodging:[],expenses:[],transport:200000}));
+  const data=await request('GET');assert.equal(data.days.length,3);assert(data.days.every(x=>x.amount===0));
+  assert.equal(data.costs[0].transport,200000);
+});

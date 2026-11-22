@@ -27,3 +27,61 @@
 .claimTitle{display:grid;overflow-wrap:anywhere}.claimTitle small{margin-top:2px}
 .groupTotal{margin-left:auto;text-align:right;font-weight:600}
 @media(max-width:600px){.claimGroup summary{flex-wrap:wrap}.groupTotal{font-size:13px}.claimTitle{max-width:86%}}
+
+/* Biaya penugasan: pemisahan harian, sekali bayar, dan tarif per malam. */
+body{background:linear-gradient(165deg,#f5f8f4 0%,#eef4f2 100%) fixed}
+.panel{box-shadow:0 6px 28px rgba(20,64,48,.045)}
+.sectionTop .subtle{margin:2px 0 0}
+.subtle,.tip{color:#61766d;font-size:13px;line-height:1.55}
+#totals>div{background:linear-gradient(135deg,#ecf6ef,#e3f1ef);min-width:180px;flex:1;padding:16px;border:1px solid #d6e7de}
+#totals strong{font-size:22px;font-variant-numeric:tabular-nums;margin-top:5px}
+#list{display:grid;gap:9px}
+.claimGroup{margin:0;border-radius:12px}
+.claimGroup summary{padding:14px 16px}
+.groupTotal{font-variant-numeric:tabular-nums}
+.extraBlock{padding:12px 14px;background:#f7faf8;border-top:1px solid #dce7e0}
+.extraBlock strong{display:block;margin-bottom:5px}
+.groupNote{padding:0 15px}
+dialog{width:min(720px,96vw);max-height:92vh;padding:0;overflow:auto;box-shadow:0 25px 90px #102b2466;border:1px solid #d7e6dd;border-radius:19px}
+#entry{padding:clamp(17px,3vw,28px)}
+.modalHeading{align-items:flex-start;position:sticky;top:0;background:#fff;z-index:3;padding:6px 0 15px;border-bottom:1px solid #e3ebe5}
+.modalHeading h2{margin:3px 0;font-size:24px}
+.eyebrow{font:700 11px/1.3 system-ui,sans-serif;letter-spacing:.1em;color:#4e8070}
+#close{font-size:20px;width:35px;height:35px;line-height:20px;flex-shrink:0}
+.editorSection{border-bottom:1px solid #e5eee7;padding:16px 0 17px}
+.editorSection h3,.estimateBox h3{font:700 16px/1.3 system-ui,sans-serif;margin:0 0 12px;display:flex;align-items:center;gap:9px;color:#244e3d}
+.editorSection .toolbar{margin-bottom:10px}
+.editorSection .toolbar h3{margin:0}
+.stepCircle{display:inline-grid;place-items:center;background:#e0eee5;color:#255943;font:700 12px system-ui,sans-serif;border-radius:50%;height:26px;width:26px}
+.fieldGrid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+#editor label{margin:6px 0 10px}
+#editor input,#editor select{min-height:38px;width:100%;padding:8px 10px}
+#editor input:focus,#editor select:focus{outline:2px solid #79b79b;outline-offset:0;border-color:#317359}
+#editor button:focus-visible{outline:3px solid #579c7c;outline-offset:2px}
+.tip{margin:4px 0 0}
+.subtleButton{border:1px solid #bbd4c6;background:#ecf6f0;color:#255c46;font-size:13px;font-weight:650;padding:8px 11px}
+#another{margin-top:15px}
+.expenseLine{display:grid;grid-template-columns:minmax(0,2fr) minmax(100px,1fr) auto;align-items:end;gap:10px;margin:10px 0;padding:8px 10px;background:#f7faf8;border:1px solid #e2eae4;border-radius:10px}
+.expenseLine label{min-width:0}
+.removeExpense{margin-bottom:10px;padding:9px 10px;background:#fff7f6;border-color:#edc7bf;color:#8c4038;font-size:13px}
+.labelHelp{color:#708579;font-size:12px}
+.nights{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:7px;margin:8px 0}
+.nightLine{display:flex;justify-content:space-between;align-items:center;gap:8px;border:1px solid #d8e7dc;background:#f8fbf9;border-radius:10px;padding:9px 10px;min-width:0}
+#editor .nightToggle{display:flex;align-items:center;gap:7px;flex:1;margin:0;cursor:pointer;min-width:0;flex-wrap:wrap;font-size:12px;font-weight:650}
+#editor .nightCheck{width:17px;height:17px;min-height:17px;accent-color:#28754d;flex:0 0 auto}
+#editor .nightAmount{width:min(110px,42%);min-width:85px;text-align:right;font-size:13px}
+.nightLine:has(.nightCheck:checked){background:#eaf6ee;border-color:#63aa80}
+.nightPill{font-size:10px;color:#698176;white-space:nowrap}
+.nightLine:has(.nightCheck:checked) .nightPill{color:#207343}
+.estimateBox{border:1px solid #cfe4d7;border-radius:13px;background:linear-gradient(140deg,#f2faf4,#ecf7f5);margin-top:20px;padding:15px}
+.estimateBox h3{margin-bottom:9px}
+.estimateLine,.estimateGrand{display:grid;grid-template-columns:1fr 1fr auto;align-items:center;gap:8px;padding:5px 0;font-size:13px}
+.estimateLine small{color:#61766d}
+.estimateLine strong,.estimateGrand strong:last-child{font-variant-numeric:tabular-nums;white-space:nowrap}
+.estimateGrand{grid-template-columns:1fr auto;border-top:1px solid #c5ddd0;margin-top:8px;padding-top:12px;font-size:15px}
+.estimateGrand strong:last-child{color:#1b694c;font-size:20px}
+.modalActions{margin-top:15px;justify-content:space-between}
+.modalActions .save{padding:10px 17px;background:#215e46}
+#remove{color:#974741;background:#fff7f5;border-color:#f0ccc5}
+@media(max-width:650px){.fieldGrid,.nights{grid-template-columns:1fr}.expenseLine{grid-template-columns:1fr auto;gap:5px}.expenseLine label:first-child{grid-column:1/-1}.expenseLine label:nth-child(2){grid-column:1}.expenseLine .removeExpense{grid-column:2}.estimateLine{grid-template-columns:1fr auto}.estimateLine small{display:none}.estimateGrand strong:last-child{font-size:18px}}
+@media(prefers-reduced-motion:no-preference){.panel,.claimGroup,.nightLine{transition:box-shadow .18s ease,background-color .18s ease,border-color .18s ease}.claimGroup:hover{box-shadow:0 5px 18px #143d2f14}.cell:hover{transform:translateY(-1px);transition:transform .15s ease}}
